@@ -1,38 +1,54 @@
 # voinosis-annotation-GUI
-# DMS Labeling Tool - 데이터/파싱/익스포트 레이어
+# DMS Labeling Tool
 
 이미 수집된 원본 데이터(`<home>/bags/<trial>/...`)를 읽어 라벨링하고,
 확정된 라벨 구간을 절대시간 기준으로 모든 센서에서 잘라
-`session_XXX_id_XXX/{scenario}/{segment}/...` 구조로 저장하는 백엔드 모듈.
+`session_XXX_id_XXX/{scenario}/{segment}/...` 구조로 저장합니다.
 
-**이번 스캐폴딩 범위**: 데이터 레이어(파싱/정렬/컷/저장)만. UI는 별도로 다시 설계 예정.
+## 폴더 구조
+
+```
+labeling_tool/
+  back/     # 데이터 레이어: 파싱 / 정렬 / 컷 / 저장 (Qt 의존성 없음, 단독 테스트 가능)
+  front/    # PySide6 UI: back의 클래스들을 가져다 화면과 상호작용에 연결
+```
+
+`back`은 PySide6 없이도(순수 파이썬 + opencv/soundfile/openpyxl만으로) 동작하므로,
+UI 없이 배치 처리 스크립트로 쓰거나 다른 프론트엔드로 교체하기도 쉽습니다.
 
 ## 환경
 
-수집/실행 모두 우분투 기준. but 크로스os가능
+수집/실행 모두 우분투 기준.
 
 ```bash
 sudo apt install ffmpeg    # OpenCV VideoWriter(mp4v)가 시스템 ffmpeg 필요
 pip install -r requirements.txt
+
+# UI 실행
+cd front
+python main.py /path/to/DMS_Actions.xlsx
 ```
 
 이 컨테이너(Ubuntu 24, OpenCV 4.13 + FFMPEG 빌드)에서 mp4v 인코딩 정상 동작 확인함.
 
-## 모듈
+## back 모듈
 
 | 파일 | 역할 |
 |---|---|
-| `models.py` | `TaskWindow`(자동 마커) / `LabelDraft`(라벨러가 만든 임시 구간) 데이터클래스 |
-| `survey_parser.py` | survey json → `TaskWindow` 리스트 (cognitive_before/after, driving) |
-| `label_taxonomy.py` | `DMS_Actions.xlsx` → Area→{verbs, nouns} 구조 (+ "기타" 자유서술 지원) |
-| `session_loader.py` | 원본 trial 폴더 스캔 (카메라 seg 파일 스티칭, 오디오/imu/radar/watch/survey 경로 매핑) |
-| `timestamp_index.py` | 절대시각 ↔ 프레임/샘플 인덱스 변환 (카메라: 프레임, 오디오: 청크→샘플) |
-| `draft_store.py` | 최종 커밋 전까지 timestamp+label만 로컬 보관 (수정 가능한 작업 상태) |
-| `segment_exporter.py` | 확정된 draft → 프레임 정확도 비디오 컷 + 오디오/센서 csv 슬라이싱 → 최종 저장 |
+| `back/__init__.py` | 패키지 마커. `front`에서는 `from back.xxx import yyy` 형태로 사용 |
+| `back/models.py` | `TaskWindow`(자동 마커) / `LabelDraft`(라벨러가 만든 임시 구간) 데이터클래스 |
+| `back/survey_parser.py` | survey json → `TaskWindow` 리스트 (cognitive_before/after, driving) |
+| `back/label_taxonomy.py` | `DMS_Actions.xlsx` → Area→{verbs, nouns} 구조 (+ "기타" 자유서술 지원) |
+| `back/session_loader.py` | 원본 trial 폴더 스캔 (카메라 seg 파일 스티칭, 오디오/imu/radar/watch/survey 경로 매핑) |
+| `back/timestamp_index.py` | 절대시각 ↔ 프레임/샘플 인덱스 변환 (카메라: 프레임, 오디오: 청크→샘플) |
+| `back/draft_store.py` | 최종 커밋 전까지 timestamp+label만 로컬 보관 (수정 가능한 작업 상태) |
+| `back/segment_exporter.py` | 확정된 draft → 프레임 정확도 비디오 컷 + 오디오/센서 csv 슬라이싱 → 최종 저장 |
+| `back/radar_index.py` | `radar_raw/segNNN/` 스캔, offset_int16 기반 프레임 절대시각 인덱스 |
+| `back/video_codec.py` | OS별로 실제 동작하는 mp4 fourcc 자동 탐지 |
 
 ## 실제 검증된 것 (실제 데이터 + 목업 데이터로 테스트 완료)
 
-- `survey_parser`: 3개 json(intro, cognitive_before_driving, driving)으로 실제 파싱 확인
+- `survey_parser`: 업로드해주신 3개 json(intro, cognitive_before_driving, driving)으로 실제 파싱 확인
   - drowsiness 구간이 `start_time - 60s ~ start_time`으로 정확히 계산됨
 - `label_taxonomy`: `DMS_Actions.xlsx` 실제 파싱 → 6개 Area, Area별 verb/noun 목록 정상 추출
 - `session_loader`: `front_color_seg001/003/006.mp4` 같은 파일명 → `driver/rgb`로 정규화, seg 번호 기준 정렬
@@ -59,6 +75,41 @@ pip install -r requirements.txt
 4. **복합 동작 분할 개수 제한**: 현재 제한 없음(라벨러 자유). 제한이 필요하면 `LabelDraft` 생성 시점에 검증 로직 추가
 5. **레이더 seg 폴더 간 시간 역전 가능성**: `RadarTimestampIndex`는 안전하게 `ros_time_sec` 기준으로 전체 재정렬하지만, 만약 서로 다른 seg의 프레임이 실제로 뒤섞여 저장되는 경우가 있다면(정상적으론 없어야 함) 프레임 하나하나가 별도 파일 I/O를 일으켜 느려질 수 있음 — 필요시 연속 구간 배치 read로 최적화 가능
 
+## front 모듈 (`front/`)
+
+PDF 시나리오 기반 PySide6 라벨링 앱. `back`의 클래스들을 `from back.xxx import yyy`로 가져다 씀.
+
+```bash
+cd front
+python main.py /path/to/DMS_Actions.xlsx   # xlsx 생략 시 "기타" 자유서술로만 라벨링 가능
+```
+
+| 파일 | 역할 |
+|---|---|
+| `front/main.py` | 진입점 |
+| `front/main_window.py` | StartPage → 시나리오 선택 → LabelingPage 흐름, 세션별 DraftStore/SegmentExporter 생성 |
+| `front/start_page.py` | home 디렉토리(bags/ 상위) 선택, 트라이얼 선택 |
+| `front/labeling_page.py` | 시나리오 공통 라벨링 페이지 (타임라인+6분할 비디오+라벨폼+draft 관리) |
+| `front/stream_player.py` | 절대시각 → 특정 카메라 스트림 프레임 (순차 재생은 빠르게, 탐색은 seek) |
+| `front/playback_controller.py` | 대시보드 마이크 오디오를 마스터 클럭으로 6개 영상 동기화 (오디오 없으면 QTimer 폴백) |
+| `front/widgets/timeline_widget.py` | task window 마커 + draft 구간 + playhead, 클릭으로 seek |
+| `front/widgets/video_panel.py` | 프레임 표시 QLabel |
+| `front/widgets/label_forms.py` | 시나리오별 라벨 폼 (Area→Verb/Noun 계층 + "기타" 자유서술 공통 패턴) |
+
+### 설계 결정 (PDF 목업과 다른 부분)
+
+- **구간 시작/끝 지정**: PDF는 타임라인 위 드래그 핸들(●)이지만, 마우스 드래그 픽셀 좌표는 이 환경에서 시각적으로 검증할 수 없어 **"시작점 지정"/"끝점 지정" 버튼으로 현재 playhead 위치를 캡처**하는 방식으로 구현. 기능은 동일(구간 시작/끝 선택), 안정성이 더 높음.
+- **구간 잠금 규칙**: `drowsiness`(질문 시작 전 1분 고정)와 `cognitive`(survey json의 실제 start/end, 특히 CBT는 "타임바를 움직이지 않게")는 TaskWindow에서 자동 계산된 구간을 그대로 쓰고 라벨러가 임의로 재조정할 수 없게(`boundaries_locked=True`) 했습니다. `distraction`만 자유롭게 여러 서브구간으로 자를 수 있습니다. 이 잠금 여부가 대화에서 명시적으로 확정되지 않은 부분(특히 cognitive의 nback도 잠글지)이 있어서, 필요하면 `LabelingPage.boundaries_locked` 조건만 바꾸면 됩니다.
+- **최종 저장**: "저장" 버튼은 `DraftStore`에만 쌓이고(수정 가능), "최종 저장(모두 커밋)" 버튼을 눌러야 `SegmentExporter`가 실제 파일을 자릅니다 (PDF의 "timestamp, label만 저장해두고 최종 완료되면 한번에 저장" 반영).
+
+### 검증 방법 (헤드리스 컨테이너 환경의 한계)
+
+이 환경은 디스플레이/오디오 장치가 없어서 실제 화면을 보거나 오디오 재생을 눈/귀로 확인할 수 없습니다. 대신:
+- `QT_QPA_PLATFORM=offscreen`으로 `QApplication`/모든 페이지가 예외 없이 생성되는 것 확인 (구조적 스모크 테스트)
+- playhead를 수동으로 옮겨가며 시작/끝점 지정 → 라벨 폼 입력 → draft 저장 → 최종 커밋까지 실제로 실행해서 `session_XXX_id_XXX/distraction/distraction_segment001/annotation.json`이 정확한 값으로 만들어지는 것 확인
+- 실제 오디오 재생(`QMediaPlayer.positionChanged`가 영상 동기화를 구동하는 부분)은 이 컨테이너에 오디오 장치가 없어서(`PulseAudioService 연결 실패`) 못 돌려봤습니다 — **실제 배포 머신에서 재생/일시정지 버튼 눌렀을 때 영상이 오디오랑 같이 움직이는지 꼭 확인해주세요.** 안 움직이면 `playback_controller.py`의 폴백(QTimer) 경로로 바꾸거나 오디오 백엔드(ffmpeg/pulseaudio) 설치를 점검하면 됩니다.
+
 ## 다음 단계 제안
 
-- PySide6 라벨링 UI (타임라인 + 6분할 비디오 + Area/Verb/Noun 계층 드롭다운) 설계 — PDF 시나리오 기반으로 다시 잡기로 하셨으니 별도 진행
+- 실제 배포 머신(디스플레이+오디오 있는 우분투)에서 `front/main.py` 실행해서 재생/오디오 동기화 육안 확인
+- 레이더 `radar_raw/segNNN`처럼 카메라도 `depth` 스트림이 UI에서 안 보이는데, 필요하면 `DISPLAY_STREAMS`(front/labeling_page.py)에 depth 패널 추가
