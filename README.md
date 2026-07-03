@@ -1,4 +1,3 @@
-# voinosis-annotation-GUI
 # DMS Labeling Tool
 
 이미 수집된 원본 데이터(`<home>/bags/<trial>/...`)를 읽어 라벨링하고,
