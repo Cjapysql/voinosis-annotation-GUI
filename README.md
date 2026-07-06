@@ -55,7 +55,7 @@ python main.py /path/to/DMS_Actions.xlsx
 - `video_codec`: OS별 실제 동작하는 fourcc 자동 탐지 (이 환경에서는 mp4v 확인됨)
 - `radar_index` + `segment_exporter._export_radar`: 실제 레이더 raw bin(132프레임)에서 특정 구간(frame 5~10)을 byte 단위로 잘라, 원본과 **바이트 완전 일치**하는 것 검증. cfg/sha256 보존도 확인
 
-## 확정된 규칙 (대화에서 합의된 것)
+## 확정된 규칙
 
 1. **절대시간 기준 정렬/컷**: 모든 센서를 공통 unix time(`t_sec`)으로 정렬 후, 라벨 구간의 절대 시작~끝으로 전 센서를 동시에 자름
 2. **카메라 seg 파일 스티칭**: 같은 스트림의 여러 mp4(seg001, seg003, seg006...)는 timestamp csv의 연속된 frame_idx 기준으로 하나의 가상 연속 타임라인처럼 취급
@@ -66,7 +66,7 @@ python main.py /path/to/DMS_Actions.xlsx
 7. **라벨 입력 UX**: 카테고리형 필드(영역/동사/명사/도로상황/날씨 등)는 목록 선택 + "기타" 선택 시 자유 서술 입력 (`LabelDraft.is_free_text_override`로 필드별 표시)
 8. **저장 정책**: 작업 중엔 `DraftStore`에 timestamp+label만 임시 저장(수정 가능), 모든 task 라벨링 완료 후 "최종 저장" 시점에 `SegmentExporter`가 실제 파일을 잘라 커밋 (커밋 후 수정 불가 취급)
 
-## 아직 확정 안 된 것 (TODO)
+## 아직 확정 안 된 것
 
 1. **`cognitive_after_driving`**: 실제 샘플 json을 못 받아서 `cognitive_before_driving`과 동일 스키마라고 가정하고 구현. 다르면 `survey_parser._parse_cognitive_section` 수정 필요
 2. **watch 폴더 실제 파일/컬럼명**: `watch_hr.csv` 등의 정확한 컬럼명(예: `timestamp` vs `t_sec`)을 실측 샘플로 확인 못함 — 현재 `_filter_csv_by_time`이 `timestamp`/`t_sec` 둘 다 시도하도록 방어적으로 짜뒀지만, 실제 컬럼명이 다르면 조용히 빈 파일이 나올 수 있음 (경고 로그 추가 권장)
