@@ -27,6 +27,8 @@ _CAMERA_FILE_RE = re.compile(
     r"^(?P<position>\w+?)_(?P<modality>color|infrared|depth)_seg(?P<seg>\d+)\.mp4$"
 )
 
+_AUDIO_SEG_FILE_RE = re.compile(r"^(?P<mic>\w+?)_seg(?P<seg>\d+)\.wav$")
+
 
 @dataclass
 class CameraStreamFiles:
@@ -37,10 +39,19 @@ class CameraStreamFiles:
 
 
 @dataclass
+class AudioStreamFiles:
+    """카메라와 동일한 규칙: {mic}_seg{NNN}.wav 여러 개 + 공유 {mic}_timestamps.csv 1개.
+    (세그먼트가 안 나뉜 단일 파일 {mic}.wav 형태도 seg_num=1짜리 리스트로 통일해서 다룸)"""
+    mic_name: str
+    segment_files: list = field(default_factory=list)  # [(seg_num, Path)], seg 번호 오름차순 정렬됨
+    timestamp_csv: Path = None
+
+
+@dataclass
 class TrialData:
     trial_dir: Path
     cameras: dict = field(default_factory=dict)   # (position, modality) -> CameraStreamFiles
-    audio: dict = field(default_factory=dict)      # mic_name -> {"wav": Path, "timestamp_csv": Path}
+    audio: dict = field(default_factory=dict)      # mic_name -> AudioStreamFiles
     imu: dict = field(default_factory=dict)        # "accel"/"gyro" -> Path
     radar: dict = field(default_factory=dict)      # "raw_bin"/"timestamp_csv" -> Path
     watch: dict = field(default_factory=dict)      # signal_name -> Path (예: hr, ibi, eda, ppg)
@@ -67,12 +78,23 @@ class SessionLoader:
 
         data.cameras = self._scan_cameras(trial_dir / "camera")
         data.audio = self._scan_audio(trial_dir / "audio")
-        data.imu = self._scan_imu(trial_dir / "imu")
+        data.imu = self._scan_imu(self._resolve_dir(trial_dir, "IMU", "imu"))
         data.radar = self._scan_radar(trial_dir / "radar")
         data.watch = self._scan_watch(trial_dir / "watch")
         data.survey_dir = trial_dir / "survey"
 
         return data
+
+    @staticmethod
+    def _resolve_dir(trial_dir: Path, *name_candidates: str) -> Path:
+        """대소문자 표기가 실측 데이터마다 다를 수 있어서(IMU 폴더가 대문자로
+        온 사례가 있었음) 후보 이름들을 순서대로 시도. 다 없으면 마지막 후보로 반환
+        (어차피 _scan_* 쪽에서 exists() 체크 후 빈 dict를 반환하니 안전함)."""
+        for name in name_candidates:
+            candidate = trial_dir / name
+            if candidate.exists():
+                return candidate
+        return trial_dir / name_candidates[-1]
 
     # ------------------------------------------------------------------
     def _scan_cameras(self, camera_dir: Path) -> dict:
@@ -117,18 +139,32 @@ class SessionLoader:
         return cameras
 
     def _scan_audio(self, audio_dir: Path) -> dict:
-        audio = {}
+        """카메라와 동일하게 {mic}_seg{NNN}.wav (+ 공유 {mic}_timestamps.csv)를 그룹핑.
+        세그먼트 번호가 없는 단일 파일({mic}.wav)도 seg_num=1짜리 세그먼트로 취급해 통일."""
+        audio: dict[str, AudioStreamFiles] = {}
         if not audio_dir.exists():
             return audio
-        for wav_path in audio_dir.glob("*.wav"):
-            mic_name = wav_path.stem  # 예: "dashboard_mic"
+
+        for wav_path in sorted(audio_dir.glob("*.wav")):
+            m = _AUDIO_SEG_FILE_RE.match(wav_path.name)
+            if m:
+                mic_name = m.group("mic")
+                seg_num = int(m.group("seg"))
+            else:
+                mic_name = wav_path.stem
+                seg_num = 1
+
+            if mic_name not in audio:
+                audio[mic_name] = AudioStreamFiles(mic_name=mic_name)
+            audio[mic_name].segment_files.append((seg_num, wav_path))
+
+        for mic_name, stream in audio.items():
+            stream.segment_files.sort(key=lambda t: t[0])
             ts_path = audio_dir / f"{mic_name}_timestamp.csv"
             if not ts_path.exists():
                 ts_path = audio_dir / f"{mic_name}_timestamps.csv"
-            audio[mic_name] = {
-                "wav": wav_path,
-                "timestamp_csv": ts_path if ts_path.exists() else None,
-            }
+            stream.timestamp_csv = ts_path if ts_path.exists() else None
+
         return audio
 
     def _scan_imu(self, imu_dir: Path) -> dict:

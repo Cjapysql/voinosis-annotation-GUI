@@ -14,11 +14,12 @@ import shutil
 from pathlib import Path
 
 import cv2
+import numpy as np
 import soundfile as sf
 
-from .models import Scenario, LabelDraft
-from .session_loader import TrialData, CameraStreamFiles
-from .timestamp_index import CameraTimestampIndex, ChunkedTimestampIndex
+from .models import Scenario, LabelDraft, TaskWindow
+from .session_loader import TrialData, CameraStreamFiles, AudioStreamFiles
+from .timestamp_index import CameraTimestampIndex, AudioTimestampIndex
 from .radar_index import RadarTimestampIndex
 from .video_codec import make_video_writer
 
@@ -55,12 +56,14 @@ class SegmentExporter:
                 with open(csv_path, "w", newline="", encoding="utf-8") as f:
                     csv.writer(f).writerow(ANNOTATION_CSV_FIELDS)
 
-        # 카메라 타임스탬프 인덱스는 스트림당 한 번만 만들면 되므로 캐시
+        # 카메라/오디오 타임스탬프 인덱스는 스트림당 한 번만 만들면 되므로 캐시
         self._camera_index_cache: dict[tuple, CameraTimestampIndex] = {}
+        self._audio_index_cache: dict[str, AudioTimestampIndex] = {}
         self._radar_index: RadarTimestampIndex | None = None
 
     # ------------------------------------------------------------------
-    def export_draft(self, draft: LabelDraft, cognitive_task_name: str = None) -> Path:
+    def export_draft(self, draft: LabelDraft, cognitive_task_name: str = None,
+                      source_window: TaskWindow = None) -> Path:
         segment_name = self.namer.next_name(draft.scenario, cognitive_task_name)
         segment_dir = self.session_dir / draft.scenario.value / segment_name
         for sub in ("camera", "audio", "physio_watch", "radar", "imu"):
@@ -80,6 +83,10 @@ class SegmentExporter:
                 "source_window_id": draft.source_window_id,
                 "label_fields": draft.label_fields,
                 "is_free_text_override": draft.is_free_text_override,
+                # survey json 원본 필드(cognitive의 NASA-TLX/SAM/KSS, driving의
+                # distraction_area/kss_score 등) 보존 - 라벨러가 입력한 label_fields와는
+                # 별개로, 원 설문 응답을 그대로 남겨서 나중에 참고할 수 있게 함.
+                "survey_extra": source_window.extra if source_window is not None else {},
             }, f, ensure_ascii=False, indent=2)
 
         csv_path = self.annotations_dir / f"{draft.scenario.value}.csv"
@@ -142,21 +149,35 @@ class SegmentExporter:
     # ------------------------------------------------------------------
     # 오디오
     # ------------------------------------------------------------------
+    def _get_audio_index(self, mic_name: str, stream: AudioStreamFiles) -> AudioTimestampIndex:
+        if mic_name not in self._audio_index_cache:
+            self._audio_index_cache[mic_name] = AudioTimestampIndex(
+                stream.timestamp_csv, stream.segment_files
+            )
+        return self._audio_index_cache[mic_name]
+
     def _export_audio(self, draft: LabelDraft, out_dir: Path):
-        for mic_name, info in self.trial.audio.items():
-            wav_path = info.get("wav")
-            ts_path = info.get("timestamp_csv")
-            if not wav_path or not ts_path:
+        for mic_name, stream in self.trial.audio.items():
+            if not stream.timestamp_csv or not stream.segment_files:
                 continue
-            index = ChunkedTimestampIndex(ts_path)
-            s0, s1 = index.time_range_to_sample_range(draft.start_ts, draft.end_ts)
-            if s1 <= s0:
+            index = self._get_audio_index(mic_name, stream)
+            file_ranges = index.time_range_to_file_ranges(draft.start_ts, draft.end_ts)
+            if not file_ranges:
+                continue  # 이 마이크엔 해당 구간 오디오가 없음(세그먼트 사이 gap 등)
+
+            chunks = []
+            samplerate = None
+            for path, s0, s1 in file_ranges:
+                with sf.SoundFile(str(path)) as f:
+                    f.seek(s0)
+                    chunks.append(f.read(frames=(s1 - s0)))
+                    samplerate = f.samplerate
+            if not chunks:
                 continue
-            with sf.SoundFile(str(wav_path)) as f:
-                f.seek(s0)
-                data = f.read(frames=(s1 - s0))
-                out_path = out_dir / f"{mic_name}.wav"
-                sf.write(str(out_path), data, f.samplerate, subtype="PCM_16")
+
+            data = np.concatenate(chunks)
+            out_path = out_dir / f"{mic_name}.wav"
+            sf.write(str(out_path), data, samplerate, subtype="PCM_16")
 
     # ------------------------------------------------------------------
     # IMU / 워치 (timestamp 컬럼 기준 행 필터)

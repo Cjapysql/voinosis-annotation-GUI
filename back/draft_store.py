@@ -73,6 +73,25 @@ class DraftStore:
             key=lambda d: d.start_ts,
         )
 
+    def committed_window_ids(self, scenario: Scenario) -> set:
+        """이미 최종 저장된 draft가 있는 source_window_id 집합 (진행 상황 표시용)."""
+        return {
+            d.source_window_id for d in self.drafts.values()
+            if d.scenario == scenario and d.committed and d.source_window_id
+        }
+
+    def find_overlap(self, scenario: Scenario, start_ts: float, end_ts: float,
+                      exclude_draft_id: str = None) -> LabelDraft | None:
+        """같은 시나리오의 확정 전 draft들 중 [start_ts, end_ts]와 시간이 겹치는 걸 찾음."""
+        for d in self.drafts.values():
+            if d.scenario != scenario or d.committed:
+                continue
+            if exclude_draft_id and d.draft_id == exclude_draft_id:
+                continue
+            if start_ts < d.end_ts and d.start_ts < end_ts:
+                return d
+        return None
+
     def mark_committed(self, draft_id: str):
         self.drafts[draft_id].committed = True
         self.save()
