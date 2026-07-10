@@ -12,8 +12,7 @@ from pathlib import Path
 
 from PySide6.QtWidgets import QApplication
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from main_window import MainWindow
+from front.main_window import MainWindow
 
 
 def main():

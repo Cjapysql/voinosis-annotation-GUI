@@ -11,12 +11,11 @@ WEATHER_OPTIONS만 교체하면 됩니다.
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 from back.label_taxonomy import AreaTaxonomy, OTHER_LABEL, area_names, verbs_for, nouns_for
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QLabel,
-    QComboBox, QLineEdit, QSpinBox
+    QComboBox, QLineEdit
 )
 
 ROAD_CONDITIONS = ["일반 주행", "위험상황 - 전방 끼어들기", "위험상황 - 급정거",
@@ -129,6 +128,16 @@ class DistractionLabelForm(QWidget):
         }
         return fields, overrides
 
+    def load_values(self, fields: dict, overrides: dict):
+        """기존 draft를 수정할 때 폼에 값을 되돌려 채움 (get_label_fields의 역방향)."""
+        self.area_field.set_value(fields.get("area", ""))  # verb/noun 옵션이 area 기준으로 갱신됨
+        self.verb_field.set_value(fields.get("verb", ""))
+        self.noun_field.set_value(fields.get("noun", ""))
+        self.verb_detail.setText(fields.get("verb_detail", ""))
+        self.noun_detail.setText(fields.get("noun_detail", ""))
+        self.road_field.set_value(fields.get("road_condition", ""))
+        self.weather_field.set_value(fields.get("weather", ""))
+
 
 # ------------------------------------------------------------------
 class DrowsinessLabelForm(QWidget):
@@ -136,10 +145,9 @@ class DrowsinessLabelForm(QWidget):
         super().__init__(parent)
         layout = QFormLayout(self)
 
-        self.kss_spin = QSpinBox()
-        self.kss_spin.setRange(1, 9)
-        self.kss_spin.setValue(5)
-        layout.addRow("KSS 점수", self.kss_spin)
+        # survey json에서 파싱된 값 그대로 - 라벨러가 바꿀 필요 없어서 고정 표시만 함
+        self.kss_label = QLabel("")
+        layout.addRow("KSS 점수", self.kss_label)
 
         self.road_field = ComboWithOther(ROAD_CONDITIONS)
         layout.addRow("도로상황", self.road_field)
@@ -148,21 +156,23 @@ class DrowsinessLabelForm(QWidget):
         layout.addRow("날씨", self.weather_field)
 
     def set_prefill_kss(self, kss_score: int | None):
-        if kss_score is not None:
-            self.kss_spin.setValue(int(kss_score))
+        self.kss_label.setText(str(kss_score) if kss_score is not None else "")
 
     def get_label_fields(self) -> tuple[dict, dict]:
         road, road_other = self.road_field.value()
         weather, weather_other = self.weather_field.value()
-        fields = {"kss_score": self.kss_spin.value(), "road_condition": road, "weather": weather}
+        kss_text = self.kss_label.text()
+        fields = {"kss_score": int(kss_text) if kss_text else None, "road_condition": road, "weather": weather}
         overrides = {"road_condition": road_other, "weather": weather_other}
         return fields, overrides
+
+    def load_values(self, fields: dict, overrides: dict):
+        self.road_field.set_value(fields.get("road_condition", ""))
+        self.weather_field.set_value(fields.get("weather", ""))
 
 
 # ------------------------------------------------------------------
 class CognitiveLabelForm(QWidget):
-    DIFFICULTIES = ["easy", "normal", "hard", OTHER_LABEL]
-
     def __init__(self, parent=None):
         super().__init__(parent)
         layout = QFormLayout(self)
@@ -170,20 +180,22 @@ class CognitiveLabelForm(QWidget):
         self.task_type_label = QLabel("")
         layout.addRow("태스크", self.task_type_label)
 
-        self.difficulty_field = ComboWithOther(self.DIFFICULTIES)
-        layout.addRow("난이도", self.difficulty_field)
+        # survey json에서 파싱된 값 그대로 - 라벨러가 바꿀 필요 없어서 고정 표시만 함
+        self.difficulty_label = QLabel("")
+        layout.addRow("난이도", self.difficulty_label)
 
         self.weather_field = ComboWithOther(WEATHER_OPTIONS)
         layout.addRow("날씨", self.weather_field)
 
     def set_prefill(self, task_type: str, difficulty: str):
         self.task_type_label.setText(task_type)
-        if difficulty:
-            self.difficulty_field.set_value(difficulty)
+        self.difficulty_label.setText(difficulty)
 
     def get_label_fields(self) -> tuple[dict, dict]:
-        difficulty, difficulty_other = self.difficulty_field.value()
         weather, weather_other = self.weather_field.value()
-        fields = {"difficulty": difficulty, "weather": weather}
-        overrides = {"difficulty": difficulty_other, "weather": weather_other}
+        fields = {"difficulty": self.difficulty_label.text(), "weather": weather}
+        overrides = {"difficulty": False, "weather": weather_other}
         return fields, overrides
+
+    def load_values(self, fields: dict, overrides: dict):
+        self.weather_field.set_value(fields.get("weather", ""))

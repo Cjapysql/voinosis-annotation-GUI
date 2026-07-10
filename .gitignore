@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.venv/
+build/
+dist/
+*.spec.bak
+# 실행 파일 옆에 두는 라벨 정의 파일 (빌드 시에만 복사)
+DMS_Actions.xlsx
+# 원본/출력 데이터
+data/
+labeled_output/
+.labeling_drafts/

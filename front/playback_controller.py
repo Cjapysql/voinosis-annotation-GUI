@@ -15,7 +15,7 @@ from typing import Callable, Optional
 from PySide6.QtCore import QObject, Signal, QTimer, QUrl
 from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
 
-from stream_player import StreamPlayer
+from front.stream_player import StreamPlayer
 
 
 class PlaybackController(QObject):
@@ -56,6 +56,10 @@ class PlaybackController(QObject):
         self._audio_player.setSource(QUrl.fromLocalFile(str(wav_path)))
         self._audio_player.positionChanged.connect(self._on_audio_position_changed)
 
+    @property
+    def is_playing(self) -> bool:
+        return self._is_playing
+
     # ------------------------------------------------------------------
     def play(self):
         self._is_playing = True
@@ -85,7 +89,14 @@ class PlaybackController(QObject):
         self.seek_to(self.total_start_ts)
 
     def seek_to(self, abs_ts: float):
-        """타임라인 클릭 등으로 특정 절대시각으로 이동."""
+        """타임라인 클릭 등으로 특정 절대시각으로 이동.
+
+        오디오가 있을 때 화면 갱신을 QMediaPlayer의 positionChanged 신호에만
+        맡기면, 요청한 시각이 오디오 커버 범위 밖이라 ms가 0으로 clamp되고
+        마침 이미 위치가 0이면 Qt가 신호를 아예 안 쏴서 화면이 멈춘 것처럼
+        보인다. 그래서 화면 갱신은 항상 여기서 요청받은 abs_ts 기준으로
+        동기적으로 하고, 오디오 위치 갱신은 best-effort로 별도 요청한다.
+        """
         abs_ts = max(self.total_start_ts, min(abs_ts, self.total_end_ts))
         if self._audio_player is not None:
             ms = int((abs_ts - self._audio_base_abs_ts) * 1000)
@@ -93,8 +104,8 @@ class PlaybackController(QObject):
             self._audio_player.setPosition(ms)
         else:
             self._fallback_current_ts = abs_ts
-            self._update_all_frames(abs_ts)
-            self.time_changed.emit(abs_ts)
+        self._update_all_frames(abs_ts)
+        self.time_changed.emit(abs_ts)
 
     # ------------------------------------------------------------------
     def _on_audio_position_changed(self, position_ms: int):

@@ -12,7 +12,6 @@ from typing import Optional
 import numpy as np
 import cv2
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # labeling_tool 루트 모듈 import용
 from back.timestamp_index import CameraTimestampIndex
 
 

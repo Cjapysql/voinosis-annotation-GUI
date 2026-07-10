@@ -4,13 +4,12 @@
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from back.session_loader import SessionLoader
 
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
-    QComboBox, QFileDialog, QMessageBox
+    QComboBox, QFileDialog, QDialog
 )
 
 
@@ -46,6 +45,22 @@ class StartPage(QWidget):
 
         layout.addStretch()
 
+    def _show_warning(self, title, message):
+        dialog = QDialog(self)
+        dialog.setWindowTitle(title)
+        dialog.setMinimumWidth(500)
+        dlg_layout = QVBoxLayout(dialog)
+
+        label = QLabel(message)
+        label.setWordWrap(True)
+        dlg_layout.addWidget(label)
+
+        ok_btn = QPushButton("OK")
+        ok_btn.clicked.connect(dialog.accept)
+        dlg_layout.addWidget(ok_btn)
+
+        dialog.exec()
+
     def _browse(self):
         path = QFileDialog.getExistingDirectory(self, "home 디렉토리 선택")
         if path:
@@ -61,12 +76,13 @@ class StartPage(QWidget):
         self.trial_combo.clear()
         self.trial_combo.addItems(trials)
         if not trials:
-            QMessageBox.warning(self, "없음", f"{home_dir}/bags 안에 트라이얼 폴더가 없습니다.")
+            bags_dir = str(Path(home_dir) / "bags")
+            self._show_warning("없음", f"{bags_dir}\n안에 트라이얼 폴더가 없습니다.")
 
     def _on_start(self):
         home_dir = self.home_dir_input.text().strip()
         trial = self.trial_combo.currentText()
         if not home_dir or not trial:
-            QMessageBox.warning(self, "입력 필요", "home 디렉토리와 트라이얼을 선택해주세요.")
+            self._show_warning("입력 필요", "home 디렉토리와 트라이얼을 선택해주세요.")
             return
         self.session_selected.emit(home_dir, trial)
