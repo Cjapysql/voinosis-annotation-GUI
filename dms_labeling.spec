@@ -88,4 +88,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon="assets/icon.ico",   # 윈도우/macOS 실행 파일 아이콘 (리눅스는 PyInstaller가 무시함)
 )
