@@ -9,12 +9,14 @@
 """
 import cv2
 import numpy as np
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import QLabel
 
 
 class VideoPanel(QLabel):
+    clicked = Signal()  # 영상 화면을 클릭했을 때 (구간 미리보기 한계 해제 등에 씀)
+
     def __init__(self, title: str = "", parent=None):
         super().__init__(parent)
         self.title = title
@@ -23,6 +25,13 @@ class VideoPanel(QLabel):
         self.setStyleSheet("background-color: #202020; color: #aaa; font-weight: bold;")
         self.setText(title)
         self._unavailable = False
+        # 클릭 한 번으로 키보드 포커스를 받아서(라벨 자체엔 keyPressEvent가 없으니
+        # 스페이스/방향키가 부모(LabelingPage)로 그대로 전달됨) 재생/탐색 단축키가 바로 먹히게 함
+        self.setFocusPolicy(Qt.ClickFocus)
+
+    def mousePressEvent(self, event):
+        super().mousePressEvent(event)
+        self.clicked.emit()
 
     def set_unavailable(self, reason: str = "이 트라이얼에 해당 스트림 없음"):
         self._unavailable = True

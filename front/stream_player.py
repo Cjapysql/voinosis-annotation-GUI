@@ -16,23 +16,21 @@ from back.timestamp_index import CameraTimestampIndex
 
 
 class StreamPlayer:
-    def __init__(self, index: CameraTimestampIndex):
+    def __init__(self, index: CameraTimestampIndex, flip_180: bool = False):
+        """flip_180: road 카메라가 광축 기준 180도 돌아간 채 장착돼 있어서,
+        화면에 보여주기 전에 180도 회전(상하좌우 동시 반전)해야 하는 스트림에 True."""
         self.index = index
+        self.flip_180 = flip_180
         self._cap: Optional[cv2.VideoCapture] = None
         self._cap_path: Optional[Path] = None
         self._local_pos = -1          # 현재 cap에서 마지막으로 읽은 local frame idx
         self._last_frame: Optional[np.ndarray] = None
 
     def frame_at_time(self, t: float) -> Optional[np.ndarray]:
-        if not self.index._frame_t_sec:
+        result = self.index.frame_at_time(t)
+        if result is None:
             return None
-        start_idx, _ = self.index.time_range_to_global_frames(t, t)
-        global_idx = max(0, min(start_idx, len(self.index._frame_t_sec) - 1))
-
-        ranges = self.index.global_frames_to_file_ranges(global_idx, global_idx + 1)
-        if not ranges:
-            return self._last_frame
-        path, local_start, _local_end = ranges[0]
+        path, local_start = result
 
         if self._cap is None or self._cap_path != path:
             if self._cap is not None:
@@ -51,6 +49,8 @@ class StreamPlayer:
             ok, frame = self._cap.read()
 
         if ok:
+            if self.flip_180 and frame is not None:
+                frame = cv2.rotate(frame, cv2.ROTATE_180)
             self._local_pos = local_start
             self._last_frame = frame
         return self._last_frame

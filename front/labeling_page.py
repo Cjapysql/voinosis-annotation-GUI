@@ -23,10 +23,10 @@ from back.segment_exporter import SegmentExporter
 from back.label_taxonomy import AreaTaxonomy
 from back.audio_stitcher import build_continuous_audio
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QEvent
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QPushButton,
-    QComboBox, QMessageBox, QListWidget, QListWidgetItem
+    QComboBox, QMessageBox, QListWidget, QListWidgetItem, QScrollBar
 )
 
 from front.widgets.timeline_widget import TimelineWidget, TimelineMarker
@@ -34,6 +34,7 @@ from front.widgets.video_panel import VideoPanel
 from front.widgets.label_forms import DistractionLabelForm, DrowsinessLabelForm, CognitiveLabelForm
 from front.stream_player import StreamPlayer
 from front.playback_controller import PlaybackController
+from front.export_worker import ExportWorker
 
 # UI에 표시할 카메라 조합 (PDF 기준: RGB + IR, depth는 화면엔 안 띄우고 백엔드에서만 저장)
 DISPLAY_STREAMS = [
@@ -51,9 +52,17 @@ MARKER_COLORS = {
 class LabelingPage(QWidget):
     back_requested = Signal()
 
+    _SCROLLBAR_RESOLUTION = 10000  # 타임라인 스크롤바 내부 해상도 (total_start~total_end를 이 정수 범위로 매핑)
+
     def __init__(self, scenario: Scenario, trial: TrialData, task_windows: list[TaskWindow],
                  draft_store: DraftStore, exporter: SegmentExporter,
-                 areas: list[AreaTaxonomy], audio_cache_dir: Path, parent=None):
+                 areas: list[AreaTaxonomy], audio_cache_dir: Path,
+                 camera_indices: dict, default_mic_name: str | None, audio_result, parent=None):
+        """camera_indices/default_mic_name/audio_result: front/labeling_page_loader.py의
+        LabelingPageDataLoader가 백그라운드 스레드에서 미리 계산해둔 값. 카메라
+        timestamp csv 파싱과 오디오 세그먼트 이어붙이기가 무거워서(수 초~수십 초),
+        생성자 안에서 직접 계산하면 화면 전환이 멈춰 OS가 "응답 없음"을 띄우는
+        문제가 있었음 - 그래서 이 생성자는 이미 계산된 값만 받아 빠르게 조립만 한다."""
         super().__init__(parent)
         self.scenario = scenario
         self.trial = trial
@@ -67,10 +76,12 @@ class LabelingPage(QWidget):
         self.current_window: TaskWindow | None = None
         self.pending_start: float | None = None
         self.pending_end: float | None = None
+        self._syncing_scrollbar = False  # 타임라인->스크롤바 동기화 중 재귀 신호 방지
 
-        self._build_camera_indices()
-        self._build_ui()
-        self._build_playback()
+        self.camera_indices: dict = camera_indices
+        self._compute_total_range()
+        self._build_ui(default_mic_name=default_mic_name)
+        self._build_playback(precomputed_audio_result=audio_result)
 
         if self.task_windows:
             self._load_task_window(self.task_windows[0])
@@ -82,12 +93,24 @@ class LabelingPage(QWidget):
         super().showEvent(event)
         self.setFocus()
 
+    def eventFilter(self, obj, event):
+        """자식 위젯(버튼/콤보박스 등)이 포커스를 가진 상태에서도 스페이스바는
+        항상 재생/일시정지 토글로만 동작하게 가로챈다 (그 위젯의 기본 스페이스바
+        동작 - 예: 버튼 재클릭 - 이 먼저 실행되는 걸 막음). 다른 키는 그대로 통과."""
+        if event.type() == QEvent.KeyPress and event.key() == Qt.Key_Space:
+            self._toggle_play_pause()
+            return True
+        return super().eventFilter(obj, event)
+
+    def _toggle_play_pause(self):
+        if self.playback.is_playing:
+            self.playback.pause()
+        else:
+            self.playback.play()
+
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_Space:
-            if self.playback.is_playing:
-                self.playback.pause()
-            else:
-                self.playback.play()
+            self._toggle_play_pause()
         elif event.key() == Qt.Key_Left:
             if event.modifiers() & Qt.ShiftModifier:
                 self._step_frame(-1)
@@ -105,20 +128,18 @@ class LabelingPage(QWidget):
         """Shift+←/→ 또는 프레임 이동 버튼: 정지 상태에서 정확히 프레임 하나씩 이동."""
         if self.playback.is_playing:
             self.playback.pause()
+        self.playback.set_playback_limit(None)  # 구간 미리보기 한계 해제 - 직접 프레임을 옮기는 건 자유 탐색으로 봄
         self.playback.seek_to(self.timeline.playhead_ts + direction * self.frame_step_sec)
 
     # ------------------------------------------------------------------
-    def _build_camera_indices(self):
-        self.camera_indices: dict[tuple, CameraTimestampIndex] = {}
+    def _compute_total_range(self):
+        """self.camera_indices(생성자에서 미리 계산되어 전달됨)로부터 타임라인
+        전체 범위만 빠르게 계산 - 카메라 인덱스 자체를 새로 만들진 않는다."""
         all_starts, all_ends = [], []
-        for (position, modality), stream in self.trial.cameras.items():
-            if not stream.timestamp_csv or not stream.segment_files:
-                continue
-            idx = CameraTimestampIndex(stream.timestamp_csv, stream.segment_files)
-            self.camera_indices[(position, modality)] = idx
-            if idx._frame_t_sec:
-                all_starts.append(idx._frame_t_sec[0])
-                all_ends.append(idx._frame_t_sec[-1])
+        for idx in self.camera_indices.values():
+            if idx.first_t_sec is not None:
+                all_starts.append(idx.first_t_sec)
+                all_ends.append(idx.last_t_sec)
 
         # task window(survey json 기준) 시각도 전체 범위에 합침 - 카메라 녹화 시작/종료가
         # survey 타임스탬프와 살짝 어긋나도(센서 시작 지연 등) 마커가 항상 타임라인 안에
@@ -143,7 +164,7 @@ class LabelingPage(QWidget):
         return 1.0 / 30.0
 
     # ------------------------------------------------------------------
-    def _build_ui(self):
+    def _build_ui(self, default_mic_name: str | None = None):
         outer = QHBoxLayout(self)
 
         left = QVBoxLayout()
@@ -161,16 +182,31 @@ class LabelingPage(QWidget):
         reset_zoom_btn = QPushButton("전체 보기")
         reset_zoom_btn.clicked.connect(self.timeline.reset_view)
         zoom_row.addWidget(reset_zoom_btn)
+        pan_left_btn = QPushButton("◀ 이동")
+        pan_right_btn = QPushButton("이동 ▶")
+        pan_left_btn.clicked.connect(lambda: self.timeline.pan_by(-0.25))
+        pan_right_btn.clicked.connect(lambda: self.timeline.pan_by(0.25))
+        zoom_row.addWidget(pan_left_btn)
+        zoom_row.addWidget(pan_right_btn)
         zoom_hint = QLabel("휠: 확대/축소 · 우클릭 드래그: 이동")
         zoom_hint.setStyleSheet("color: #888;")
         zoom_row.addWidget(zoom_hint)
         zoom_row.addStretch()
         left.addLayout(zoom_row)
 
+        # 확대된 상태에서 playhead/재생 화면과 별개로 타임라인 위치를 직접 옮길 수 있는 바.
+        # TimelineWidget의 view_range_changed와 서로 동기화 (재귀 방지는 _syncing_scrollbar 플래그).
+        self.timeline_scrollbar = QScrollBar(Qt.Horizontal)
+        self.timeline_scrollbar.valueChanged.connect(self._on_scrollbar_changed)
+        self.timeline.view_range_changed.connect(self._on_timeline_view_changed)
+        left.addWidget(self.timeline_scrollbar)
+        self._on_timeline_view_changed(self.timeline.view_start, self.timeline.view_end)
+
         grid = QGridLayout()
         self.video_panels: dict[str, VideoPanel] = {}
         for i, (position, modality, title) in enumerate(DISPLAY_STREAMS):
             panel = VideoPanel(title)
+            panel.clicked.connect(self._on_video_panel_clicked)
             self.video_panels[f"{position}_{modality}"] = panel
             grid.addWidget(panel, i // 3, i % 3)
         grid_widget = QWidget()
@@ -194,6 +230,30 @@ class LabelingPage(QWidget):
         transport.addWidget(self.stop_btn)
         transport.addWidget(self.prev_frame_btn)
         transport.addWidget(self.next_frame_btn)
+
+        transport.addWidget(QLabel("오디오:"))
+        self.audio_combo = QComboBox()
+        self.audio_combo.addItems([
+            mic_name for mic_name, stream in self.trial.audio.items() if stream.segment_files
+        ])
+        # 기본 재생 마이크는 로더(LabelingPageDataLoader)가 미리 고른 것과 반드시
+        # 같아야 한다 - 그래야 콤보박스 표시와 실제로 로드된 오디오가 일치함.
+        # currentTextChanged 연결 전에 설정해야 self.playback이 아직 없는 이
+        # 시점에 _on_audio_stream_changed가 안 불림.
+        if default_mic_name is not None and self.audio_combo.findText(default_mic_name) >= 0:
+            self.audio_combo.setCurrentText(default_mic_name)
+        self.audio_combo.setEnabled(self.audio_combo.count() > 0)
+        self.audio_combo.currentTextChanged.connect(self._on_audio_stream_changed)
+        transport.addWidget(self.audio_combo)
+
+        transport.addWidget(QLabel("배속:"))
+        self.speed_combo = QComboBox()
+        self.speed_combo.addItems(["0.25x", "0.5x", "0.75x", "1.0x", "1.5x", "2.0x"])
+        # audio_combo와 동일한 이유로, 기본값은 currentTextChanged 연결 전에 설정
+        self.speed_combo.setCurrentText("1.0x")
+        self.speed_combo.currentTextChanged.connect(self._on_speed_changed)
+        transport.addWidget(self.speed_combo)
+
         left.addLayout(transport)
 
         outer.addLayout(left, stretch=3)
@@ -224,7 +284,12 @@ class LabelingPage(QWidget):
         side.addWidget(QLabel("불러오기"))
         self.window_combo = QComboBox()
         self.window_combo.addItems([w.window_id for w in self.task_windows])
-        self.window_combo.currentIndexChanged.connect(self._on_window_selected)
+        # currentIndexChanged는 선택값이 실제로 바뀔 때만 발생해서, 이미 선택된
+        # 항목을 다시 고르면 아무 반응이 없었음(예: task1->task2->task1은 되는데
+        # task1이 이미 선택된 상태에서 task1을 다시 고르면 안 됨). activated는
+        # 사용자가 드롭다운에서 항목을 고르는 행위 자체에 반응해서 같은 항목을
+        # 다시 골라도 항상 발생한다.
+        self.window_combo.activated.connect(self._on_window_selected)
         side.addWidget(self.window_combo)
 
         self.label_form = self._make_label_form()
@@ -267,6 +332,7 @@ class LabelingPage(QWidget):
 
         side.addWidget(QLabel("작업 중인 구간들"))
         self.draft_list = QListWidget()
+        self.draft_list.itemClicked.connect(self._on_draft_item_clicked)
         side.addWidget(self.draft_list)
 
         draft_actions = QHBoxLayout()
@@ -290,6 +356,13 @@ class LabelingPage(QWidget):
         self.pause_btn.clicked.connect(lambda: self.playback.pause())
         self.stop_btn.clicked.connect(lambda: self.playback.stop())
 
+        # 버튼/콤보박스/리스트 등 자식 위젯이 포커스를 가진 상태에서 스페이스바를
+        # 누르면 Qt 기본 동작(그 위젯을 다시 클릭/토글)이 먼저 먹어버려서 재생/일시정지
+        # 토글이 안 먹힘 - 모든 자식에 이벤트 필터를 걸어 스페이스바만은 항상 이
+        # 페이지가 먼저 가로채게 한다 (정지 버튼 등 다른 동작은 그대로 각자 처리).
+        for child in self.findChildren(QWidget):
+            child.installEventFilter(self)
+
     def _make_label_form(self) -> QWidget:
         if self.scenario == Scenario.DISTRACTION:
             return DistractionLabelForm(self.areas)
@@ -299,7 +372,7 @@ class LabelingPage(QWidget):
             return CognitiveLabelForm()
 
     # ------------------------------------------------------------------
-    def _build_playback(self):
+    def _build_playback(self, precomputed_audio_result=None):
         self.playback = PlaybackController(self.total_start, self.total_end, parent=self)
         self.playback.time_changed.connect(self.timeline.set_playhead)
 
@@ -310,30 +383,110 @@ class LabelingPage(QWidget):
             if idx is None:
                 panel.set_unavailable()
                 continue
-            player = StreamPlayer(idx)
+            # road 카메라는 광축 기준 180도 돌아간 채 장착되어 있어서 화면 표시 전에 보정
+            player = StreamPlayer(idx, flip_180=(position == "road"))
             self.playback.register_stream(key, player, panel.update_frame)
 
-        mic = self._select_audio_stream()
-        if mic is not None:
-            result = build_continuous_audio(mic, self.audio_cache_dir)
-            if result is not None:
-                wav_path, base_ts = result
-                self.playback.set_audio(wav_path, base_ts)
-
+        # 오디오 스티칭은 이미 LabelingPageDataLoader가 백그라운드에서 끝내고
+        # 넘겨준 결과를 그대로 쓴다 (_load_selected_audio()는 마이크를 나중에
+        # 콤보박스에서 직접 바꿀 때만 다시 호출됨).
+        if precomputed_audio_result is not None:
+            wav_path, base_ts = precomputed_audio_result
+            self.playback.set_audio(wav_path, base_ts)
         self.playback.seek_to(self.total_start)
 
     def _select_audio_stream(self):
-        """오디오는 마이크 하나만 마스터 시계로 쓰면 되므로, 세그먼트+timestamp가
-        온전한 마이크 중 첫 번째를 고른다 (예: byv20처럼 timestamp csv만 있고
-        wav 세그먼트가 없는 마이크는 건너뜀)."""
-        for stream in self.trial.audio.values():
-            if stream.segment_files and stream.timestamp_csv:
-                return stream
+        """오디오는 마이크 하나만 마스터 시계로 쓰면 되므로, 콤보박스(audio_combo)에서
+        라벨러가 고른 마이크를 쓴다. wav 세그먼트가 없는 마이크(예: timestamp csv만
+        있는 마이크)는 콤보박스에 애초에 안 올라가 있음."""
+        mic_name = self.audio_combo.currentText()
+        return self.trial.audio.get(mic_name)
+
+    def _load_selected_audio(self):
+        """audio_combo에서 선택된 마이크로 재생용 오디오를 (다시) 빌드한다."""
+        mic = self._select_audio_stream()
+        if mic is None:
+            return
+        reference_starts = self._reference_segment_starts(len(mic.segment_files))
+        result = build_continuous_audio(mic, self.audio_cache_dir,
+                                         reference_segment_starts=reference_starts)
+        if result is not None:
+            wav_path, base_ts = result
+            self.playback.set_audio(wav_path, base_ts)
+
+    def _on_audio_stream_changed(self, _mic_name: str):
+        """라벨러가 오디오 콤보박스에서 다른 마이크를 고르면 재생 오디오를 교체."""
+        was_playing = self.playback.is_playing
+        if was_playing:
+            self.playback.pause()
+        self._load_selected_audio()
+        self.playback.seek_to(self.timeline.playhead_ts)
+        if was_playing:
+            self.playback.play()
+
+    def _on_speed_changed(self, text: str):
+        rate = float(text.rstrip("x"))
+        self.playback.set_playback_rate(rate)
+
+    def _reference_segment_starts(self, expected_count: int) -> list[float] | None:
+        """비디오(카메라) 쪽에서 계산된 세그먼트 시작 시각을 오디오 등 다른 센서의
+        기준으로 삼는다 - 카메라는 프레임마다 실측 timestamp가 촘촘해서 세그먼트가
+        일부만 담겨있어도 어느 세그먼트인지 훨씬 신뢰도 높게 판단할 수 있다.
+
+        카메라마다 자체 fps 미세 오차가 있어서(실측해보니 세그먼트 하나 없는
+        구간을 역산할 때 카메라 간 1~2초 정도 편차 발생) 어떤 스트림을 기준으로
+        쓰는지 매번 달라지면 안 되므로, DISPLAY_STREAMS 순서(driver_rgb 우선)로
+        고정해서 항상 같은 스트림을 기준으로 삼는다."""
+        for position, modality, _title in DISPLAY_STREAMS:
+            idx = self.camera_indices.get((position, modality))
+            if idx is None:
+                continue
+            starts = idx.segment_starts
+            if starts and len(starts) == expected_count:
+                return starts
         return None
 
     # ------------------------------------------------------------------
     def _on_timeline_clicked(self, ts: float):
+        # 구간 미리보기(_on_draft_item_clicked)로 걸어둔 재생 한계가 있으면
+        # 해제 - 타임라인을 직접 클릭한 건 자유롭게 재생하고 싶다는 뜻으로 본다.
+        self.playback.set_playback_limit(None)
         self.playback.seek_to(ts)
+
+    def _on_video_panel_clicked(self):
+        # 영상 화면을 클릭하는 것도 "자유롭게 다루고 싶다"는 뜻으로 보고 구간
+        # 미리보기 한계를 해제 (위치 자체는 안 건드림 - 포커스만 받으려고
+        # 클릭하는 경우도 많아서 재생 위치를 옮기진 않는다).
+        self.playback.set_playback_limit(None)
+
+    def _on_timeline_view_changed(self, view_start: float, view_end: float):
+        """TimelineWidget이 보이는 범위가 바뀌면(휠 확대/축소, 우클릭 드래그, 이동
+        버튼, playhead 자동 추적 등 - 원인 무관) 스크롤바 위치/두께를 그 범위에
+        맞춰준다. _on_scrollbar_changed로 다시 되돌아 트리거되지 않게 플래그로 막음."""
+        total_span = self.timeline.total_end - self.timeline.total_start
+        if total_span <= 0:
+            return
+        res = self._SCROLLBAR_RESOLUTION
+        page = max(1, int(round((view_end - view_start) / total_span * res)))
+        value = int(round((view_start - self.timeline.total_start) / total_span * res))
+
+        self._syncing_scrollbar = True
+        self.timeline_scrollbar.setRange(0, max(0, res - page))
+        self.timeline_scrollbar.setPageStep(page)
+        self.timeline_scrollbar.setValue(value)
+        self._syncing_scrollbar = False
+
+    def _on_scrollbar_changed(self, value: int):
+        """라벨러가 스크롤바를 직접 드래그/클릭했을 때만 타임라인 뷰를 이동시킨다
+        (타임라인 쪽 변화로 스크롤바가 맞춰지는 중일 땐 _syncing_scrollbar로 무시)."""
+        if self._syncing_scrollbar:
+            return
+        total_span = self.timeline.total_end - self.timeline.total_start
+        if total_span <= 0:
+            return
+        span = self.timeline.view_end - self.timeline.view_start
+        new_start = self.timeline.total_start + value / self._SCROLLBAR_RESOLUTION * total_span
+        self.timeline.set_view_range(new_start, new_start + span)
 
     def _on_window_selected(self, idx: int):
         if 0 <= idx < len(self.task_windows):
@@ -353,6 +506,7 @@ class LabelingPage(QWidget):
         self.current_window = window
         self.pending_start, self.pending_end = None, None
         self.timeline.set_pending_selection(None, None)
+        self.playback.set_playback_limit(None)  # 다른 태스크로 넘어가면 구간 미리보기 한계 해제
 
         markers = [TimelineMarker(w.window_id, w.start_ts, w.end_ts, MARKER_COLORS[self.scenario])
                    for w in self.task_windows]
@@ -394,9 +548,9 @@ class LabelingPage(QWidget):
         (스트림 내부에 gap이 있는 경우까지는 못 잡지만, 오늘 겪은 것처럼 아예 다른
         세션 시간대를 가리키는 survey 데이터를 걸러내는 용도로는 충분함)"""
         for idx in self.camera_indices.values():
-            if not idx._frame_t_sec:
+            if idx.first_t_sec is None:
                 continue
-            if idx._frame_t_sec[0] <= end_ts and start_ts <= idx._frame_t_sec[-1]:
+            if idx.first_t_sec <= end_ts and start_ts <= idx.last_t_sec:
                 return True
         return False
 
@@ -414,10 +568,12 @@ class LabelingPage(QWidget):
 
     # ------------------------------------------------------------------
     def _on_mark_start(self):
+        self.playback.set_playback_limit(None)  # 새 구간을 정의하기 시작하는 행위 - 구간 미리보기 한계 해제
         self.pending_start = self._current_playhead_ts()
         self.timeline.set_pending_selection(self.pending_start, self.pending_end)
 
     def _on_mark_end(self):
+        self.playback.set_playback_limit(None)
         self.pending_end = self._current_playhead_ts()
         self.timeline.set_pending_selection(self.pending_start, self.pending_end)
 
@@ -425,6 +581,7 @@ class LabelingPage(QWidget):
         """자동 계산값(또는 distraction은 instruction 전체 구간)으로 되돌림."""
         if self.current_window is None:
             return
+        self.playback.set_playback_limit(None)
         guideline = self._compute_guideline(self.current_window)
         if guideline is None:
             guideline = (self.current_window.start_ts, self.current_window.end_ts)
@@ -474,10 +631,27 @@ class LabelingPage(QWidget):
             return None
         return item.data(Qt.UserRole)
 
+    def _on_draft_item_clicked(self, item: QListWidgetItem):
+        """목록에서 구간을 클릭하면 (수정/삭제와 별개로) 그 구간으로 재생 위치를
+        옮기고 타임라인을 그 범위에 맞게 확대 - 완료된 구간도 내용을 미리 볼 수
+        있게 함(수정/삭제는 여전히 불가). 재생을 누르면 그 구간 끝에서 자동으로
+        멈춰서, 이어지는 다른 구간까지 그냥 쭉 재생되지 않게 한다."""
+        draft_id = item.data(Qt.UserRole)
+        draft = self.draft_store.drafts.get(draft_id)
+        if draft is None:
+            return
+        self.timeline.zoom_to_fit(draft.start_ts, draft.end_ts)
+        self.playback.set_playback_limit(draft.end_ts)
+        self.playback.seek_to(draft.start_ts)
+
     def _on_delete_draft(self):
         draft_id = self._selected_draft_id()
         if draft_id is None:
             QMessageBox.information(self, "선택 필요", "삭제할 구간을 목록에서 먼저 선택해주세요.")
+            return
+        draft = self.draft_store.drafts.get(draft_id)
+        if draft is not None and draft.committed:
+            QMessageBox.information(self, "삭제 불가", "이미 최종 저장된 구간은 삭제할 수 없습니다.")
             return
         self.draft_store.remove_draft(draft_id)
         self._refresh_draft_markers()
@@ -490,6 +664,9 @@ class LabelingPage(QWidget):
             return
         draft = self.draft_store.drafts.get(draft_id)
         if draft is None:
+            return
+        if draft.committed:
+            QMessageBox.information(self, "수정 불가", "이미 최종 저장된 구간은 수정할 수 없습니다.")
             return
 
         self.pending_start, self.pending_end = draft.start_ts, draft.end_ts
@@ -510,13 +687,18 @@ class LabelingPage(QWidget):
         self.timeline.set_draft_markers(markers)
 
     def _refresh_draft_list(self):
+        """확정 전 draft뿐 아니라 이미 최종 저장된 것까지 이 태스크 창에 대해
+        전부 보여준다 - "최종 저장"을 눌러도 직전까지 작업한 이력이 목록에서
+        사라지지 않고, 이전에 뭘 했는지 계속 볼 수 있게 하기 위함. 완료된 항목은
+        "[완료]"로 표시하고 수정/삭제는 막는다(_on_edit_draft/_on_delete_draft)."""
         self.draft_list.clear()
         if self.current_window is None:
             return
-        drafts = [d for d in self.draft_store.drafts_for_scenario(self.scenario)
+        drafts = [d for d in self.draft_store.all_drafts_for_scenario(self.scenario)
                   if d.source_window_id == self.current_window.window_id]
         for i, d in enumerate(drafts, start=1):
-            item = QListWidgetItem(f"Seg{i}  [{d.start_ts:.2f} ~ {d.end_ts:.2f}]  {d.label_fields}")
+            prefix = "[완료] " if d.committed else ""
+            item = QListWidgetItem(f"{prefix}Seg{i}  [{d.start_ts:.2f} ~ {d.end_ts:.2f}]  {d.label_fields}")
             item.setData(Qt.UserRole, d.draft_id)
             self.draft_list.addItem(item)
 
@@ -534,13 +716,87 @@ class LabelingPage(QWidget):
         if reply != QMessageBox.Yes:
             return
 
+        jobs = []
         for d in drafts:
             window = next((w for w in self.task_windows if w.window_id == d.source_window_id), None)
             cognitive_task_name = window.task_name if isinstance(window, CognitiveTaskWindow) else None
-            self.exporter.export_draft(d, cognitive_task_name=cognitive_task_name, source_window=window)
-            self.draft_store.mark_committed(d.draft_id)
+            jobs.append((d, cognitive_task_name, window))
 
+        self._set_draft_controls_enabled(False)
+        self._export_done = 0
+        self._export_total = len(jobs)
+        self._export_step = ""
+        self._update_export_status_text()
+
+        # self.exporter는 distraction/drowsiness/cognitive 세 페이지가 전부 공유
+        # (front/main_window.py) - 그걸 그대로 백그라운드 스레드에 넘기면, 다른
+        # 시나리오에서 동시에 "최종 저장"을 눌렀을 때 같은 인스턴스의 캐시/카운터를
+        # 두 스레드가 동시에 건드리는 경쟁 상태가 생길 수 있다. 그래서 커밋
+        # 배치마다 독립된 SegmentExporter를 새로 만든다 - SegmentNamer가 폴더를
+        # 스캔해서 번호를 이어가므로(back/segment_exporter.py) 매번 새로 만들어도
+        # 번호가 꼬이지 않는다.
+        export_instance = SegmentExporter(self.trial, self.exporter.session_dir)
+
+        # self에 보관해서 스레드 객체가 조기에 GC되는 걸 방지 (참조가 없어지면
+        # 실행 중이어도 파이썬이 수거할 수 있음)
+        self._export_worker = ExportWorker(export_instance, jobs, parent=self)
+        self._export_worker.progress.connect(self._on_export_progress)
+        self._export_worker.step_progress.connect(self._on_export_step_progress)
+        self._export_worker.finished_ok.connect(self._on_export_finished)
+        self._export_worker.failed.connect(self._on_export_failed)
+        self._export_worker.start()
+
+    def _update_export_status_text(self):
+        self.final_commit_btn.setText(
+            f"저장 중... ({self._export_done}/{self._export_total}구간) {self._export_step}"
+        )
+
+    def _on_export_progress(self, done: int, total: int):
+        self._export_done = done
+        self._export_total = total
+        self._export_step = ""
+        self._update_export_status_text()
+
+    def _on_export_step_progress(self, message: str):
+        self._export_step = message
+        self._update_export_status_text()
+
+    def _on_export_finished(self, committed: list, export_warnings: list):
+        for draft_id, segment_dir in committed:
+            self.draft_store.mark_committed(draft_id, segment_dir=segment_dir)
+        self._finish_export_ui(export_warnings)
+
+    def _on_export_failed(self, committed: list, error_message: str):
+        # 실패 전까지 실제로 export가 끝난 구간은 그대로 커밋 처리 (다시 시도할 때
+        # 중복 작업하지 않도록)
+        for draft_id, segment_dir in committed:
+            self.draft_store.mark_committed(draft_id, segment_dir=segment_dir)
+        self._finish_export_ui([], error_message=error_message)
+
+    def _finish_export_ui(self, export_warnings: list, error_message: str = None):
+        self._set_draft_controls_enabled(True)
+        self.final_commit_btn.setText("최종 저장 (모두 커밋)")
         self._refresh_draft_markers()
         self._refresh_draft_list()
         self._refresh_progress_label()
-        QMessageBox.information(self, "완료", "최종 저장이 완료되었습니다.")
+
+        if error_message:
+            QMessageBox.critical(self, "오류", f"저장 중 오류가 발생했습니다:\n{error_message}")
+        elif export_warnings:
+            QMessageBox.warning(
+                self, "완료 (일부 느린 경로 사용됨)",
+                "최종 저장은 완료됐지만, 일부 구간에서 빠른 프레임 탐색이 실패해 "
+                "느린 방식으로 대체됐습니다 (정확도에는 영향 없음):\n\n"
+                + "\n".join(export_warnings)
+            )
+        else:
+            QMessageBox.information(self, "완료", "최종 저장이 완료되었습니다.")
+
+    def _set_draft_controls_enabled(self, enabled: bool):
+        """export가 백그라운드에서 도는 동안 draft_store/exporter를 동시에 건드릴
+        수 있는 조작(구간 저장/수정/삭제, 시작·끝점 지정, 다른 태스크로 전환)을
+        잠근다."""
+        for w in (self.final_commit_btn, self.save_draft_btn, self.edit_draft_btn,
+                  self.delete_draft_btn, self.mark_start_btn, self.mark_end_btn,
+                  self.reset_guideline_btn, self.window_combo):
+            w.setEnabled(enabled)

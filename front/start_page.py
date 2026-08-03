@@ -62,7 +62,22 @@ class StartPage(QWidget):
         dialog.exec()
 
     def _browse(self):
-        path = QFileDialog.getExistingDirectory(self, "home 디렉토리 선택")
+        # getExistingDirectory()는 블로킹(모달) 정적 호출이라, 열려있는 동안
+        # 파이썬 실행이 그 함수 안에 멈춰있어서 메인 창을 닫아도 앱 전체 종료가
+        # 안 될 수 있었다. QFileDialog 인스턴스를 직접 만들어서 exec() 대신
+        # open()(비블로킹)으로 띄우면 메인 이벤트 루프가 계속 정상 진행되고,
+        # 메인 창을 닫으면(MainWindow.closeEvent) 이 다이얼로그도 같이 정리된다.
+        # DontUseNativeDialog는 OS 고유 다이얼로그의 창 관리 이상 동작(뒤로 밀려도
+        # 못 가져오는 등)을 피하기 위함.
+        dialog = QFileDialog(self, "디렉토리 선택", "/home/")
+        dialog.setFileMode(QFileDialog.FileMode.Directory)
+        dialog.setOption(QFileDialog.Option.ShowDirsOnly, True)
+        dialog.setOption(QFileDialog.Option.DontUseNativeDialog, True)
+        dialog.fileSelected.connect(self._on_home_dir_chosen)
+        self._browse_dialog = dialog  # 참조 유지 (없으면 GC로 창이 바로 닫힐 수 있음)
+        dialog.open()
+
+    def _on_home_dir_chosen(self, path: str):
         if path:
             self.home_dir_input.setText(path)
             self._refresh_trials()

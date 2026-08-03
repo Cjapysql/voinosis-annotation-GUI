@@ -20,7 +20,7 @@ view_start~view_end(현재 보이는 확대 범위)를 두고 화면 좌표 변�
 from dataclasses import dataclass
 
 from PySide6.QtCore import Qt, Signal, QRectF
-from PySide6.QtGui import QPainter, QColor, QPen, QBrush
+from PySide6.QtGui import QPainter, QColor, QPen, QBrush, QFontMetrics
 from PySide6.QtWidgets import QWidget
 
 
@@ -34,8 +34,10 @@ class TimelineMarker:
 
 class TimelineWidget(QWidget):
     position_clicked = Signal(float)  # 클릭한 절대시각
+    view_range_changed = Signal(float, float)  # 확대/이동 등으로 보이는 범위(view_start, view_end)가 바뀔 때마다
 
     MIN_VIEW_SPAN_SEC = 2.0
+    PLAYHEAD_FOLLOW_MARGIN_RATIO = 0.05  # playhead가 이 비율 안쪽까지 오면 뷰를 밀어서 따라감
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -57,6 +59,7 @@ class TimelineWidget(QWidget):
         self.view_start = self.total_start
         self.view_end = self.total_end
         self.update()
+        self.view_range_changed.emit(self.view_start, self.view_end)
 
     def set_view_range(self, start_ts: float, end_ts: float):
         """확대/이동된 화면 범위를 지정. total 범위 밖으로는 못 벗어나게 clamp."""
@@ -67,6 +70,13 @@ class TimelineWidget(QWidget):
         self.view_start = start_ts
         self.view_end = start_ts + span
         self.update()
+        self.view_range_changed.emit(self.view_start, self.view_end)
+
+    def pan_by(self, fraction: float):
+        """현재 보이는 구간(span)의 fraction 비율만큼 좌우로 이동 (음수면 왼쪽)."""
+        span = self.view_end - self.view_start
+        shift = span * fraction
+        self.set_view_range(self.view_start + shift, self.view_end + shift)
 
     def zoom_to_fit(self, start_ts: float, end_ts: float, padding_ratio: float = 0.2):
         """특정 구간(예: 현재 작업 중인 instruction 구간)이 여백을 두고 화면에 꽉 차게."""
@@ -86,8 +96,17 @@ class TimelineWidget(QWidget):
         self.update()
 
     def set_playhead(self, ts: float):
+        """playhead가 확대된 뷰(view_start~view_end) 가장자리 근처까지 벗어나면,
+        확대 폭은 그대로 유지한 채 뷰를 밀어서 playhead가 항상 보이게 따라간다."""
         self.playhead_ts = ts
-        self.update()
+        span = self.view_end - self.view_start
+        margin = span * self.PLAYHEAD_FOLLOW_MARGIN_RATIO
+        if ts > self.view_end - margin:
+            self.set_view_range(ts - span + margin, ts + margin)
+        elif ts < self.view_start + margin:
+            self.set_view_range(ts - margin, ts - margin + span)
+        else:
+            self.update()
 
     def set_pending_selection(self, start_ts: float | None, end_ts: float | None):
         self.pending_start = start_ts
@@ -125,14 +144,22 @@ class TimelineWidget(QWidget):
         painter.setBrush(QColor("#e0e0e0"))
         painter.drawRoundedRect(QRectF(0, track_y, w, track_h), 3, 3)
 
-        # task window 마커 (상단 브래킷 + 라벨)
+        # task window 마커 (상단 브래킷 + 라벨). 라벨끼리 시간상 가까워서 겹칠 수
+        # 있으므로(예: pre_nback1/pre_nback2가 몇십 초 간격), 2단으로 번갈아 배치해서
+        # 겹침을 피한다 - 각 줄에서 직전 라벨이 끝난 x좌표보다 뒤에 있는 줄에 배정.
+        fm = QFontMetrics(painter.font())
+        row_end_x = [float("-inf"), float("-inf")]
         for m in self.task_markers:
             x0, x1 = self._ts_to_x(m.start_ts), self._ts_to_x(m.end_ts)
             painter.setPen(QPen(QColor(m.color), 2))
             painter.drawLine(int(x0), int(track_y - 15), int(x0), int(track_y - 5))
             painter.drawLine(int(x1), int(track_y - 15), int(x1), int(track_y - 5))
             painter.drawLine(int(x0), int(track_y - 15), int(x1), int(track_y - 15))
-            painter.drawText(int(x0), int(track_y - 20), m.label)
+
+            row = 0 if x0 >= row_end_x[0] else (1 if x0 >= row_end_x[1] else 0)
+            row_end_x[row] = x0 + fm.horizontalAdvance(m.label) + 6
+            label_y = track_y - 20 - row * (fm.height() + 2)
+            painter.drawText(int(x0), int(label_y), m.label)
 
         # 확정 전 draft 구간 (반투명 색)
         for m in self.draft_markers:

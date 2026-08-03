@@ -95,3 +95,6 @@ class LabelDraft:
     is_free_text_override: dict = field(default_factory=dict)
     # 필드별로 "기타" 선택 시 자유 서술을 썼는지 표시: {"area": True, ...}
     committed: bool = False        # 최종 export 완료 여부
+    segment_dir: Optional[str] = None  # 최종 export된 폴더 경로 (committed=True일 때만 값 있음) -
+    # 폴더를 라벨러가 나중에 수동으로 지워도 "완료"로 계속 보이는 걸 막기 위해,
+    # 이 경로가 실제로 디스크에 있는지 DraftStore.committed_window_ids()가 확인함

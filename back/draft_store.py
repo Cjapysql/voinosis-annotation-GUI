@@ -73,12 +73,30 @@ class DraftStore:
             key=lambda d: d.start_ts,
         )
 
+    def all_drafts_for_scenario(self, scenario: Scenario) -> list[LabelDraft]:
+        """확정 전 draft와 이미 최종 저장된 것 전부(시간순) - "작업 중인 구간들"
+        목록에서 이전에 완료한 작업 이력까지 같이 보여주는 용도. 최종 저장 여부로
+        거르는 drafts_for_scenario()와 달리 전부 반환한다."""
+        return sorted(
+            (d for d in self.drafts.values() if d.scenario == scenario),
+            key=lambda d: d.start_ts,
+        )
+
     def committed_window_ids(self, scenario: Scenario) -> set:
-        """이미 최종 저장된 draft가 있는 source_window_id 집합 (진행 상황 표시용)."""
-        return {
-            d.source_window_id for d in self.drafts.values()
-            if d.scenario == scenario and d.committed and d.source_window_id
-        }
+        """이미 최종 저장된 draft가 있는 source_window_id 집합 (진행 상황 표시용).
+
+        segment_dir이 기록돼 있는(신규) draft는 그 폴더가 실제로 디스크에
+        아직 있는지 확인한다 - 라벨러가 결과물을 수동으로 지워도 "완료"로 계속
+        보이는 걸 막기 위함. segment_dir을 모르는(이 필드가 생기기 전에 커밋된)
+        옛 기록은 확인할 방법이 없으니 그대로 완료로 인정한다."""
+        result = set()
+        for d in self.drafts.values():
+            if d.scenario != scenario or not d.committed or not d.source_window_id:
+                continue
+            if d.segment_dir and not Path(d.segment_dir).exists():
+                continue
+            result.add(d.source_window_id)
+        return result
 
     def find_overlap(self, scenario: Scenario, start_ts: float, end_ts: float,
                       exclude_draft_id: str = None) -> LabelDraft | None:
@@ -92,6 +110,8 @@ class DraftStore:
                 return d
         return None
 
-    def mark_committed(self, draft_id: str):
+    def mark_committed(self, draft_id: str, segment_dir: str = None):
         self.drafts[draft_id].committed = True
+        if segment_dir is not None:
+            self.drafts[draft_id].segment_dir = segment_dir
         self.save()
