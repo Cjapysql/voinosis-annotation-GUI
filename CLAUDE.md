@@ -10,6 +10,28 @@ driving-session recordings (multiple cameras, audio, IMU, radar, watch) with thr
 frame/sample accuracy and exported to a structured output tree. Source comments and the README are in
 Korean; when editing files, match the existing Korean comment style rather than switching to English.
 
+## Documentation map
+
+This repo carries more documentation than just this file — check it before assuming something is
+undocumented:
+
+- `docs/<module>.md` — one file per `back/`/`front/` source file (22 total), each with an "imported by"
+  table, mechanism detail, and cross-refs into the two files below. Read the relevant one before touching
+  a file.
+- `docs/module_map.html` (`.png`/`.jpg` are static renders of the same page) — dependency diagram across
+  all 22 files plus a suggested reading order.
+- `design_considerations.md` — numbered sections on why things are designed the way they are (trade-offs
+  considered). `docs/*.md` cross-reference these by number.
+- `session_issues_log.md` — numbered sections logging bugs actually hit during development and how they
+  were found/fixed, with conversation excerpts. `docs/*.md` cross-reference these by number.
+- `README.md` — human-facing overview/onboarding entry point; largely mirrors this file's Architecture and
+  Domain-rules sections plus module tables, TODOs, and a pointer to `DEPLOY.md`.
+- `DEPLOY.md` / `설치_안내.md` — building/distributing the packaged executable to non-developer labelers.
+
+When a change alters architecture, a domain rule, or resolves/adds a TODO, update the matching section in
+this file and in `README.md` (and the relevant `docs/*.md` / `design_considerations.md` /
+`session_issues_log.md` entry) in the same change — these are treated as living docs, not one-off write-ups.
+
 ## Commands
 
 ```bash
@@ -27,9 +49,19 @@ python run_app.py [/path/to/DMS_Actions.xlsx]
 ./build.sh          # wraps: python3 -m venv .venv && pip install -r requirements.txt pyinstaller && pyinstaller dms_labeling.spec
 # Output: dist/dms_labeling
 
+# Build a Linux executable that works across Ubuntu versions (Docker, pinned to Ubuntu 22.04 — the oldest
+# version labelers run — so glibc forward-compat covers newer versions too; host OS version doesn't matter)
+./build_linux_2204.sh
+
+# Windows executable: no local command — pushed via GitHub Actions (.github/workflows/build-windows.yml),
+# either manually (workflow_dispatch) or on a v* tag push, since PyInstaller can't cross-compile.
+
 # Diagnostic: inspect raw frame/sample counts for a trial without modifying anything
 python check_av_frames.py <home_dir> <trial_folder_name>
 ```
+
+See `DEPLOY.md` for the full build/distribution walkthrough (both Linux paths, Windows CI, desktop-icon
+registration via `assets/install_linux.sh`, and labeler-PC prerequisites).
 
 There is no automated test suite, linter, or CI config in this repo. Validation has historically been done
 via manual/offscreen smoke tests (see "Headless verification" below) — there is no `pytest`/`unittest`
@@ -70,17 +102,28 @@ The codebase is a strict two-layer split:
    distraction label form's dropdowns (with a "기타" free-text escape hatch on every categorical field).
 7. **`video_codec.py`** auto-detects a working mp4 fourcc for the current OS (mp4v confirmed working on
    Ubuntu 24 / OpenCV 4.13 in the reference build environment).
+8. **`coverage.py`** does a cheap, segment-granularity-only pass (first/last timestamp per segment CSV, no
+   frame/sample-accurate indexing) to answer "does this sensor have any data near this range at all" —
+   used for the "no data in this range" warning banner in the labeling UI, not for cutting.
 
 ### `front/` flow
 
-`main.py` → `MainWindow` (`main_window.py`) drives `StartPage` (pick `home_dir`/trial) → scenario selection
-→ `LabelingPage` (`labeling_page.py`, the shared page for all three scenarios: timeline + 6-way video split
-+ label form + draft management), constructing one `DraftStore`/`SegmentExporter` pair per session.
-`stream_player.py` maps absolute time → a frame for one camera stream (fast sequential playback vs. seek).
+`main.py` (or `run_app.py`, same entry, adds `sys.path` handling — what PyInstaller builds from) →
+`MainWindow` (`main_window.py`) drives `StartPage` (pick `home_dir`/trial) → scenario selection →
+`labeling_page_loader.py` runs the heavy pre-construction work (camera timestamp indices, audio stitching)
+on a background thread so the scenario→labeling screen transition doesn't freeze the UI → `LabelingPage`
+(`labeling_page.py`, the shared page for all three scenarios: timeline + 6-way video split + label form +
+draft management), constructing one `DraftStore`/`SegmentExporter` pair per session. `stream_player.py`
+maps absolute time → a frame for one camera stream (fast sequential playback vs. seek).
 `playback_controller.py` uses the dashboard mic audio as the master clock to keep the 6 video panels in
 sync (falls back to a `QTimer` if no audio track is available). `widgets/timeline_widget.py` renders task
-window markers, draft segments, and the playhead. `widgets/label_forms.py` implements the shared
-Area→Verb/Noun-hierarchy-plus-"기타" pattern per scenario.
+window markers, draft segments, and the playhead. `widgets/video_panel.py` displays one camera panel,
+distinguishing "this stream doesn't exist for this trial" from "stream exists but no frame at this instant
+(gap)". `widgets/label_forms.py` implements the shared Area→Verb/Noun-hierarchy-plus-"기타" pattern per
+scenario. On final save, `export_worker.py` runs `SegmentExporter.export_draft()` on a background `QThread`
+(re-encoding can take seconds-to-tens-of-seconds per segment) and only calls `DraftStore.mark_committed()`
+back on the main thread once it signals done, to avoid the two threads touching draft-store file I/O
+concurrently.
 
 ### Domain rules that are load-bearing (don't relitigate without checking README.md / `models.py` docstring)
 
@@ -100,6 +143,13 @@ Area→Verb/Noun-hierarchy-plus-"기타" pattern per scenario.
 - Column names for watch CSVs (`timestamp` vs `t_sec`) are not confirmed against real hardware —
   `_filter_csv_by_time` defensively tries both; a real mismatch fails silently into an empty file rather
   than raising.
+- Export-side padding: if a label segment's requested `[start_ts, end_ts]` only partially overlaps a
+  sensor's actual recorded gap (not zero overlap — a segment with zero real data still produces no file at
+  all, unchanged), that sensor's output is padded to the full requested duration rather than left short.
+  Audio pads with real silence (`np.zeros`); video pads by repeating the nearer boundary frame, split at
+  the gap's temporal midpoint — deliberately mirroring `CameraTimestampIndex.frame_at_time()`'s existing
+  playback-time gap-clamping behavior rather than a simpler "always hold last frame" rule (explicit design
+  choice; see `design_considerations.md` 17 and `session_issues_log.md` 18).
 
 ### Headless verification (no display/audio device in the reference dev environment)
 
@@ -108,6 +158,13 @@ Historical validation used `QT_QPA_PLATFORM=offscreen` to construct all pages wi
 through a real event loop and confirm `positionChanged` progresses. If you touch playback/timeline code and
 have no display available, this is the pattern to reuse rather than assuming headless = untestable.
 
+For `back/`-only changes (no Qt involved), the recurring pattern instead is calling the function directly
+against a real trial's data (real segment CSVs, real mp4/wav — not synthetic) and checking the numeric
+result (frame counts, byte offsets, computed timestamps) against an independently-computed expected value.
+Because mp4 re-encoding is lossy, byte-identity checks don't work for video frames even when the source
+content is genuinely unchanged — mean absolute pixel difference is used instead, with ~2-7 observed for
+"same content, encoder noise" vs. ~26-30 for "actually different content".
+
 ## Known open items (see README.md "아직 확정 안 된 것" for full detail)
 
 - Watch CSV column names are unconfirmed against real device output.
@@ -115,3 +172,6 @@ have no display available, this is the pattern to reuse rather than assuming hea
   manually using the task text hint); would need a mapping table to automate.
 - `DISPLAY_STREAMS` in `front/labeling_page.py` controls which camera panels render — depth stream is
   currently not shown.
+- `RadarTimestampIndex` re-sorts frames by `ros_time_sec` for safety, but if frames from different seg
+  folders actually turn out to be interleaved on disk (shouldn't happen normally), per-frame reads would
+  each trigger separate file I/O; batched contiguous-range reads would be the fix if this is ever observed.

@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>모듈 의존성 지도</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f4f6fa;
+    --surface: #ffffff;
+    --surface-alt: #eef1f7;
+    --text: #1a2130;
+    --text-dim: #5b6472;
+    --text-faint: #8891a0;
+    --border: #dde2eb;
+    --border-strong: #c7cedb;
+
+    --back: #a8621f;
+    --back-ink: #7a4713;
+    --back-tint: #fbeee0;
+    --back-line: #c98a44;
+
+    --front: #2f5fd1;
+    --front-ink: #1f3f91;
+    --front-tint: #e7edfc;
+    --front-line: #6f92e3;
+
+    --entry: #2f5fd1;
+    --entry-text: #ffffff;
+
+    --shadow: 0 1px 2px rgba(23, 30, 48, 0.04), 0 8px 24px -12px rgba(23, 30, 48, 0.12);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #10131c;
+      --surface: #161b28;
+      --surface-alt: #1b2130;
+      --text: #e8ebf3;
+      --text-dim: #9aa3b5;
+      --text-faint: #6b7385;
+      --border: #2a3244;
+      --border-strong: #384056;
+
+      --back: #e0a05e;
+      --back-ink: #f3c187;
+      --back-tint: #2f2415;
+      --back-line: #8a6031;
+
+      --front: #7fa2ff;
+      --front-ink: #b3c6ff;
+      --front-tint: #172142;
+      --front-line: #4661a6;
+
+      --entry: #7fa2ff;
+      --entry-text: #0c1220;
+
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 28px -14px rgba(0, 0, 0, 0.6);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --bg: #10131c;
+    --surface: #161b28;
+    --surface-alt: #1b2130;
+    --text: #e8ebf3;
+    --text-dim: #9aa3b5;
+    --text-faint: #6b7385;
+    --border: #2a3244;
+    --border-strong: #384056;
+
+    --back: #e0a05e;
+    --back-ink: #f3c187;
+    --back-tint: #2f2415;
+    --back-line: #8a6031;
+
+    --front: #7fa2ff;
+    --front-ink: #b3c6ff;
+    --front-tint: #172142;
+    --front-line: #4661a6;
+
+    --entry: #7fa2ff;
+    --entry-text: #0c1220;
+
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 28px -14px rgba(0, 0, 0, 0.6);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Public Sans", -apple-system, "Malgun Gothic", sans-serif;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 56px 32px 96px;
+  }
+
+  header.hero {
+    margin-bottom: 40px;
+  }
+
+  .eyebrow {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 12.5px;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    margin: 0 0 14px;
+  }
+
+  h1 {
+    font-size: clamp(28px, 4vw, 40px);
+    font-weight: 800;
+    letter-spacing: -0.01em;
+    margin: 0 0 14px;
+    text-wrap: balance;
+  }
+
+  .lede {
+    max-width: 62ch;
+    color: var(--text-dim);
+    font-size: 16px;
+    margin: 0;
+  }
+
+  .lede code, .body code {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.88em;
+    background: var(--surface-alt);
+    border: 1px solid var(--border);
+    padding: 0.05em 0.4em;
+    border-radius: 4px;
+  }
+
+  /* ---------- legend ---------- */
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 22px;
+    align-items: center;
+    margin: 28px 0 22px;
+    padding: 14px 18px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: var(--shadow);
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13.5px;
+    color: var(--text-dim);
+  }
+
+  .swatch {
+    width: 14px;
+    height: 14px;
+    border-radius: 4px;
+    flex: none;
+  }
+  .swatch.back { background: var(--back-tint); border: 1.5px solid var(--back); }
+  .swatch.front { background: var(--front-tint); border: 1.5px solid var(--front); }
+  .swatch.entry { background: var(--entry); }
+
+  .legend-sep {
+    width: 1px;
+    align-self: stretch;
+    background: var(--border);
+  }
+
+  .legend-note {
+    font-size: 13.5px;
+    color: var(--text-faint);
+    margin-left: auto;
+  }
+
+  /* ---------- diagram card ---------- */
+  .diagram-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    box-shadow: var(--shadow);
+    padding: 20px 20px 8px;
+    overflow-x: auto;
+  }
+
+  figure { margin: 0; }
+
+  svg.map { display: block; width: 100%; height: auto; min-width: 720px; }
+
+  .box { fill: var(--surface); stroke-width: 1.4; }
+  .box-back { fill: var(--back-tint); stroke: var(--back-line); }
+  .box-front { fill: var(--front-tint); stroke: var(--front-line); }
+  .box-entry { fill: var(--entry); stroke: var(--entry); }
+
+  text.lbl {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 12px;
+    font-weight: 500;
+    fill: var(--text);
+  }
+  .node-entry text.lbl { fill: var(--entry-text); font-weight: 600; }
+
+  line.edge { stroke: var(--text-faint); }
+
+  figcaption {
+    font-size: 13px;
+    color: var(--text-faint);
+    text-align: center;
+    padding: 10px 0 16px;
+  }
+
+  /* row bracket labels */
+  .row-tags {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 4px;
+    margin: 4px 2px 0;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px;
+    color: var(--text-faint);
+    text-align: center;
+    letter-spacing: 0.02em;
+  }
+
+  /* ---------- reading order ---------- */
+  .order-head {
+    margin: 56px 0 4px;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+
+  h2 {
+    font-size: 22px;
+    font-weight: 700;
+    margin: 0;
+    letter-spacing: -0.005em;
+  }
+
+  .order-head .hint {
+    font-size: 13.5px;
+    color: var(--text-faint);
+  }
+
+  .tier {
+    margin-top: 30px;
+  }
+
+  .tier-label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    margin-bottom: 10px;
+  }
+
+  .tier-label .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+  .tier-label.back .dot { background: var(--back); }
+  .tier-label.front .dot { background: var(--front); }
+  .tier-label.entry .dot { background: var(--entry); }
+
+  ol.reading {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+
+  ol.reading li {
+    background: var(--surface);
+    display: grid;
+    grid-template-columns: 34px minmax(0, 275px) 1fr;
+    gap: 16px;
+    align-items: baseline;
+    padding: 11px 16px;
+  }
+
+  .idx {
+    font-family: "JetBrains Mono", monospace;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-faint);
+    font-size: 13px;
+  }
+
+  .file {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    overflow-wrap: break-word;
+  }
+
+  .desc {
+    font-size: 13.5px;
+    color: var(--text-dim);
+  }
+
+  @media (max-width: 640px) {
+    ol.reading li { grid-template-columns: 24px 1fr; }
+    .file { white-space: normal; }
+    .desc { grid-column: 2; }
+  }
+
+  footer.note {
+    margin-top: 48px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+    font-size: 13px;
+    color: var(--text-faint);
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="hero">
+    <p class="eyebrow">DMS 라벨링 툴 · 코드 레퍼런스</p>
+    <h1>모듈 의존성 지도</h1>
+    <p class="lede">
+      <code>docs/</code> 22개 문서가 각 파일을 개별로 설명한다면, 이 그림은 그 파일들이
+      서로를 어떻게 가져다 쓰는지 한눈에 보여준다. 화살표는 "가리키는 쪽이 가리켜지는
+      쪽을 import한다"는 뜻이고, 아래로 갈수록 더 근본적인(다른 걸 안 가져다 쓰는) 모듈이다.
+    </p>
+  </header>
+
+  <div class="legend">
+    <div class="legend-item"><span class="swatch back"></span><code>back/</code> — Qt 없는 순수 데이터 계층</div>
+    <div class="legend-item"><span class="swatch front"></span><code>front/</code> — PySide6 UI 계층</div>
+    <div class="legend-item"><span class="swatch entry"></span>실행 진입점</div>
+    <div class="legend-sep"></div>
+    <div class="legend-note">화살표 = "가져다 씀" (import), 굵고 진할수록 적은 수의 대상을 가리킴</div>
+  </div>
+
+  <div class="diagram-card">
+    <figure>
+      <svg class="map" viewBox="0 0 1290 986" role="img" aria-label="back와 front 22개 모듈의 import 의존 관계를 아래(기반)에서 위(진입점)로 쌓아 보여주는 다이어그램">
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="var(--text-faint)"/>
+          </marker>
+        </defs>
+
+        <!-- edges (drawn first, sit under node boxes) -->
+        <g>
+          <line x1="243.0" y1="762.0" x2="109.0" y2="880.0" class="edge" style="opacity:0.85; stroke-width:1.6" marker-end="url(#arrow)"/>
+          <line x1="377.0" y1="762.0" x2="109.0" y2="880.0" class="edge" style="opacity:0.85; stroke-width:1.6" marker-end="url(#arrow)"/>
+          <line x1="511.0" y1="762.0" x2="243.0" y2="880.0" class="edge" style="opacity:0.85; stroke-width:1.6" marker-end="url(#arrow)"/>
+          <line x1="511.0" y1="762.0" x2="377.0" y2="880.0" class="edge" style="opacity:0.85; stroke-width:1.6" marker-end="url(#arrow)"/>
+          <line x1="779.0" y1="762.0" x2="377.0" y2="880.0" class="edge" style="opacity:0.85; stroke-width:1.6" marker-end="url(#arrow)"/>
+          <line x1="913.0" y1="762.0" x2="779.0" y2="880.0" class="edge" style="opacity:0.85; stroke-width:1.6" marker-end="url(#arrow)"/>
+          <line x1="645.0" y1="762.0" x2="109.0" y2="880.0" class="edge" style="opacity:0.4; stroke-width:1.1" marker-end="url(#arrow)"/>
+          <line x1="645.0" y1="762.0" x2="243.0" y2="880.0" class="edge" style="opacity:0.4; stroke-width:1.1" marker-end="url(#arrow)"/>
+          <line x1="645.0" y1="762.0" x2="377.0" y2="880.0" class="edge" style="opacity:0.4; stroke-width:1.1" marker-end="url(#arrow)"/>
+          <line x1="645.0" y1="762.0" x2="645.0" y2="880.0" class="edge" style="opacity:0.4; stroke-width:1.1" marker-end="url(#arrow)"/>
+          <line x1="645.0" y1="762.0" x2="913.0" y2="880.0" class="edge" style="opacity:0.4; stroke-width:1.1" marker-end="url(#arrow)"/>
+          <line x1="1047.0" y1="762.0" x2="243.0" y2="880.0" class="edge" style="opacity:0.85; stroke-width:1.6" marker-end="url(#arrow)"/>
+          <line x1="511.0" y1="598.0" x2="779.0" y2="716.0" class="edge" style="opacity:0.85; stroke-width:1.6" marker-end="url(#arrow)"/>
+          <line x1="645.0" y1="598.0" x2="243.0" y2="880.0" class="edge" style="opacity:0.4; stroke-width:1.1" marker-end="url(#arrow)"/>
+          <line x1="645.0" y1="598.0" x2="377.0" y2="880.0" class="edge" style="opacity:0.4; stroke-width:1.1" marker-end="url(#arrow)"/>
+          <line x1="645.0" y1="598.0" x2="511.0" y2="716.0" class="edge" style="opacity:0.4; stroke-width:1.1" marker-end="url(#arrow)"/>
+          <line x1="645.0" y1="598.0" x2="511.0" y2="880.0" class="edge" style="opacity:0.4; stroke-width:1.1" marker-end="url(#arrow)"/>
+          <line x1="779.0" y1="598.0" x2="109.0" y2="880.0" class="edge" style="opacity:0.85; stroke-width:1.6" marker-end="url(#arrow)"/>
+          <line x1="779.0" y1="598.0" x2="645.0" y2="716.0" class="edge" style="opacity:0.85; stroke-width:1.6" marker-end="url(#arrow)"/>
+          <line x1="645.0" y1="434.0" x2="109.0" y2="880.0" class="edge" style="opacity:0.28; stroke-width:1.1" marker-end="url(#arrow)"/>
+          <line x1="645.0" y1="434.0" x2="243.0" y2="880.0" class="edge" style="opacity:0.28; stroke-width:1.1" marker-end="url(#arrow)"/>
+          <line x1="645.0" y1="434.0" x2="377.0" y2="880.0" class="edge" style="opacity:0.28; stroke-width:1.1" marker-end="url(#arrow)"/>
+          <line x1="645.0" y1="434.0" x2="377.0" y2="716.0" class="edge" style="opacity:0.28; stroke-width:1.1" marker-end="url(#arrow)"/>
+          <line x1="645.0" y1="434.0" x2="645.0" y2="716.0" class="edge" style="opacity:0.28; stroke-width:1.1" marker-end="url(#arrow)"/>
+          <line x1="645.0" y1="434.0" x2="779.0" y2="880.0" class="edge" style="opacity:0.28; stroke-width:1.1" marker-end="url(#arrow)"/>
+          <line x1="645.0" y1="434.0" x2="511.0" y2="716.0" class="edge" style="opacity:0.28; stroke-width:1.1" marker-end="url(#arrow)"/>
+          <line x1="645.0" y1="434.0" x2="511.0" y2="880.0" class="edge" style="opacity:0.28; stroke-width:1.1" marker-end="url(#arrow)"/>
+          <line x1="645.0" y1="434.0" x2="1047.0" y2="880.0" class="edge" style="opacity:0.28; stroke-width:1.1" marker-end="url(#arrow)"/>
+          <line x1="645.0" y1="434.0" x2="1181.0" y2="880.0" class="edge" style="opacity:0.28; stroke-width:1.1" marker-end="url(#arrow)"/>
+          <line x1="645.0" y1="434.0" x2="913.0" y2="716.0" class="edge" style="opacity:0.28; stroke-width:1.1" marker-end="url(#arrow)"/>
+          <line x1="645.0" y1="434.0" x2="779.0" y2="716.0" class="edge" style="opacity:0.28; stroke-width:1.1" marker-end="url(#arrow)"/>
+          <line x1="645.0" y1="434.0" x2="511.0" y2="552.0" class="edge" style="opacity:0.28; stroke-width:1.1" marker-end="url(#arrow)"/>
+          <line x1="645.0" y1="434.0" x2="779.0" y2="552.0" class="edge" style="opacity:0.28; stroke-width:1.1" marker-end="url(#arrow)"/>
+          <line x1="645.0" y1="270.0" x2="109.0" y2="880.0" class="edge" style="opacity:0.4; stroke-width:1.1" marker-end="url(#arrow)"/>
+          <line x1="645.0" y1="270.0" x2="243.0" y2="880.0" class="edge" style="opacity:0.4; stroke-width:1.1" marker-end="url(#arrow)"/>
+          <line x1="645.0" y1="270.0" x2="243.0" y2="716.0" class="edge" style="opacity:0.4; stroke-width:1.1" marker-end="url(#arrow)"/>
+          <line x1="645.0" y1="270.0" x2="377.0" y2="716.0" class="edge" style="opacity:0.4; stroke-width:1.1" marker-end="url(#arrow)"/>
+          <line x1="645.0" y1="270.0" x2="645.0" y2="716.0" class="edge" style="opacity:0.4; stroke-width:1.1" marker-end="url(#arrow)"/>
+          <line x1="645.0" y1="270.0" x2="779.0" y2="880.0" class="edge" style="opacity:0.4; stroke-width:1.1" marker-end="url(#arrow)"/>
+          <line x1="645.0" y1="270.0" x2="1047.0" y2="716.0" class="edge" style="opacity:0.4; stroke-width:1.1" marker-end="url(#arrow)"/>
+          <line x1="645.0" y1="270.0" x2="645.0" y2="388.0" class="edge" style="opacity:0.4; stroke-width:1.1" marker-end="url(#arrow)"/>
+          <line x1="645.0" y1="270.0" x2="645.0" y2="552.0" class="edge" style="opacity:0.4; stroke-width:1.1" marker-end="url(#arrow)"/>
+          <line x1="645.0" y1="106.0" x2="645.0" y2="224.0" class="edge" style="opacity:0.85; stroke-width:1.6" marker-end="url(#arrow)"/>
+        </g>
+
+        <!-- nodes -->
+        <g class="node node-back">
+          <rect x="50.0" y="880.0" width="118" height="46" rx="7" class="box box-back"/>
+          <text x="109.0" y="907.0" text-anchor="middle" class="lbl">models</text>
+        </g>
+        <g class="node node-back">
+          <rect x="184.0" y="880.0" width="118" height="46" rx="7" class="box box-back"/>
+          <text x="243.0" y="897.0" text-anchor="middle" class="lbl">session</text>
+          <text x="243.0" y="913.0" text-anchor="middle" class="lbl">loader</text>
+        </g>
+        <g class="node node-back">
+          <rect x="318.0" y="880.0" width="118" height="46" rx="7" class="box box-back"/>
+          <text x="377.0" y="897.0" text-anchor="middle" class="lbl">timestamp</text>
+          <text x="377.0" y="913.0" text-anchor="middle" class="lbl">index</text>
+        </g>
+        <g class="node node-back">
+          <rect x="452.0" y="880.0" width="118" height="46" rx="7" class="box box-back"/>
+          <text x="511.0" y="907.0" text-anchor="middle" class="lbl">coverage</text>
+        </g>
+        <g class="node node-back">
+          <rect x="586.0" y="880.0" width="118" height="46" rx="7" class="box box-back"/>
+          <text x="645.0" y="897.0" text-anchor="middle" class="lbl">radar</text>
+          <text x="645.0" y="913.0" text-anchor="middle" class="lbl">index</text>
+        </g>
+        <g class="node node-back">
+          <rect x="720.0" y="880.0" width="118" height="46" rx="7" class="box box-back"/>
+          <text x="779.0" y="897.0" text-anchor="middle" class="lbl">label</text>
+          <text x="779.0" y="913.0" text-anchor="middle" class="lbl">taxonomy</text>
+        </g>
+        <g class="node node-back">
+          <rect x="854.0" y="880.0" width="118" height="46" rx="7" class="box box-back"/>
+          <text x="913.0" y="897.0" text-anchor="middle" class="lbl">video</text>
+          <text x="913.0" y="913.0" text-anchor="middle" class="lbl">codec</text>
+        </g>
+        <g class="node node-front">
+          <rect x="988.0" y="880.0" width="118" height="46" rx="7" class="box box-front"/>
+          <text x="1047.0" y="897.0" text-anchor="middle" class="lbl">timeline</text>
+          <text x="1047.0" y="913.0" text-anchor="middle" class="lbl">widget</text>
+        </g>
+        <g class="node node-front">
+          <rect x="1122.0" y="880.0" width="118" height="46" rx="7" class="box box-front"/>
+          <text x="1181.0" y="897.0" text-anchor="middle" class="lbl">video</text>
+          <text x="1181.0" y="913.0" text-anchor="middle" class="lbl">panel</text>
+        </g>
+        <g class="node node-back">
+          <rect x="184.0" y="716.0" width="118" height="46" rx="7" class="box box-back"/>
+          <text x="243.0" y="733.0" text-anchor="middle" class="lbl">survey</text>
+          <text x="243.0" y="749.0" text-anchor="middle" class="lbl">parser</text>
+        </g>
+        <g class="node node-back">
+          <rect x="318.0" y="716.0" width="118" height="46" rx="7" class="box box-back"/>
+          <text x="377.0" y="733.0" text-anchor="middle" class="lbl">draft</text>
+          <text x="377.0" y="749.0" text-anchor="middle" class="lbl">store</text>
+        </g>
+        <g class="node node-back">
+          <rect x="452.0" y="716.0" width="118" height="46" rx="7" class="box box-back"/>
+          <text x="511.0" y="733.0" text-anchor="middle" class="lbl">audio</text>
+          <text x="511.0" y="749.0" text-anchor="middle" class="lbl">stitcher</text>
+        </g>
+        <g class="node node-front">
+          <rect x="720.0" y="716.0" width="118" height="46" rx="7" class="box box-front"/>
+          <text x="779.0" y="733.0" text-anchor="middle" class="lbl">stream</text>
+          <text x="779.0" y="749.0" text-anchor="middle" class="lbl">player</text>
+        </g>
+        <g class="node node-front">
+          <rect x="854.0" y="716.0" width="118" height="46" rx="7" class="box box-front"/>
+          <text x="913.0" y="733.0" text-anchor="middle" class="lbl">label</text>
+          <text x="913.0" y="749.0" text-anchor="middle" class="lbl">forms</text>
+        </g>
+        <g class="node node-back">
+          <rect x="586.0" y="716.0" width="118" height="46" rx="7" class="box box-back"/>
+          <text x="645.0" y="733.0" text-anchor="middle" class="lbl">segment</text>
+          <text x="645.0" y="749.0" text-anchor="middle" class="lbl">exporter</text>
+        </g>
+        <g class="node node-front">
+          <rect x="988.0" y="716.0" width="118" height="46" rx="7" class="box box-front"/>
+          <text x="1047.0" y="733.0" text-anchor="middle" class="lbl">start</text>
+          <text x="1047.0" y="749.0" text-anchor="middle" class="lbl">page</text>
+        </g>
+        <g class="node node-front">
+          <rect x="452.0" y="552.0" width="118" height="46" rx="7" class="box box-front"/>
+          <text x="511.0" y="569.0" text-anchor="middle" class="lbl">playback</text>
+          <text x="511.0" y="585.0" text-anchor="middle" class="lbl">controller</text>
+        </g>
+        <g class="node node-front">
+          <rect x="586.0" y="552.0" width="118" height="46" rx="7" class="box box-front"/>
+          <text x="645.0" y="569.0" text-anchor="middle" class="lbl">labeling_page</text>
+          <text x="645.0" y="585.0" text-anchor="middle" class="lbl">loader</text>
+        </g>
+        <g class="node node-front">
+          <rect x="720.0" y="552.0" width="118" height="46" rx="7" class="box box-front"/>
+          <text x="779.0" y="569.0" text-anchor="middle" class="lbl">export</text>
+          <text x="779.0" y="585.0" text-anchor="middle" class="lbl">worker</text>
+        </g>
+        <g class="node node-front">
+          <rect x="586.0" y="388.0" width="118" height="46" rx="7" class="box box-front"/>
+          <text x="645.0" y="405.0" text-anchor="middle" class="lbl">labeling</text>
+          <text x="645.0" y="421.0" text-anchor="middle" class="lbl">page</text>
+        </g>
+        <g class="node node-front">
+          <rect x="586.0" y="224.0" width="118" height="46" rx="7" class="box box-front"/>
+          <text x="645.0" y="241.0" text-anchor="middle" class="lbl">main</text>
+          <text x="645.0" y="257.0" text-anchor="middle" class="lbl">window</text>
+        </g>
+        <g class="node node-entry">
+          <rect x="586.0" y="60.0" width="118" height="46" rx="7" class="box box-entry"/>
+          <text x="645.0" y="77.0" text-anchor="middle" class="lbl">main.py /</text>
+          <text x="645.0" y="93.0" text-anchor="middle" class="lbl">run_app.py</text>
+        </g>
+      </svg>
+      <figcaption>
+        아래는 기반 계층(자기 자신 외엔 back/front를 안 가져다 씀), 위로 갈수록 여러
+        모듈을 조립하는 계층. <code>labeling_page.py</code>와 <code>main_window.py</code>가
+        각각 front/의 대부분, 그리고 페이지 전체를 엮는 지점이라 화살표가 몰려있다.
+      </figcaption>
+    </figure>
+  </div>
+
+  <div class="order-head">
+    <h2>읽는 순서</h2>
+    <span class="hint">위 지도에서 아래→위로 읽는 순서와 같다</span>
+  </div>
+
+  <div class="tier">
+    <p class="tier-label back"><span class="dot"></span>back/ — 기반부터</p>
+    <ol class="reading" start="1">
+      <li><span class="idx">01</span><span class="file">models.md</span><span class="desc">다른 모든 모듈이 참조하는 기본 데이터 타입 (Scenario, TaskWindow, LabelDraft)</span></li>
+      <li><span class="idx">02</span><span class="file">session_loader.md</span><span class="desc">원본 폴더를 스캔해 센서별 파일 목록(TrialData)을 만듦</span></li>
+      <li><span class="idx">03</span><span class="file">timestamp_index.md</span><span class="desc">절대시각 ↔ 프레임/샘플 위치 변환, 정렬의 핵심 엔진 (분량 많음)</span></li>
+      <li><span class="idx">04</span><span class="file">coverage.md</span><span class="desc">센서별 대략적인 커버리지를 가볍게 조회 (경고 배너용)</span></li>
+      <li><span class="idx">05</span><span class="file">audio_stitcher.md</span><span class="desc">세그먼트 오디오를 재생용 연속 wav로 이어붙임</span></li>
+      <li><span class="idx">06</span><span class="file">radar_index.md</span><span class="desc">레이더 seg 폴더를 스캔해 프레임 단위 인덱스를 만듦</span></li>
+      <li><span class="idx">07</span><span class="file">survey_parser.md</span><span class="desc">survey json → TaskWindow 리스트 (타임라인 프리필 마커)</span></li>
+      <li><span class="idx">08</span><span class="file">draft_store.md</span><span class="desc">확정 전 라벨 draft를 JSON 파일에 저장/불러오기</span></li>
+      <li><span class="idx">09</span><span class="file">segment_exporter.md</span><span class="desc">draft를 실제로 잘라 최종 폴더 구조로 내보냄, back/ 대부분을 엮음</span></li>
+      <li><span class="idx">10</span><span class="file">label_taxonomy.md</span><span class="desc">DMS_Actions.xlsx → distraction 폼의 Area/Verb/Noun 목록</span></li>
+      <li><span class="idx">11</span><span class="file">video_codec.md</span><span class="desc">OS별로 실제 동작하는 mp4 fourcc를 찾는 유틸</span></li>
+    </ol>
+  </div>
+
+  <div class="tier">
+    <p class="tier-label front"><span class="dot"></span>front/ — 그 위에 얹는 UI</p>
+    <ol class="reading" start="12">
+      <li><span class="idx">12</span><span class="file">stream_player.md</span><span class="desc">카메라 스트림 하나에서 절대시각에 해당하는 프레임을 읽어옴</span></li>
+      <li><span class="idx">13</span><span class="file">playback_controller.md</span><span class="desc">오디오를 마스터 시계 삼아 여러 스트림 재생을 동기화</span></li>
+      <li><span class="idx">14</span><span class="file">widgets_timeline_widget.md</span><span class="desc">타임라인 바 위젯 — 마커, draft 구간, 재생헤드, 확대/이동</span></li>
+      <li><span class="idx">15</span><span class="file">widgets_video_panel.md</span><span class="desc">영상 프레임 하나를 보여주는 패널 (6분할 그리드의 한 칸)</span></li>
+      <li><span class="idx">16</span><span class="file">widgets_label_forms.md</span><span class="desc">시나리오별 라벨 입력 폼 3종 + "기타" 자유서술 위젯</span></li>
+      <li><span class="idx">17</span><span class="file">labeling_page_loader.md</span><span class="desc">무거운 계산을 백그라운드 스레드에서 먼저 끝내는 로더</span></li>
+      <li><span class="idx">18</span><span class="file">export_worker.md</span><span class="desc">최종 저장 배치를 백그라운드 스레드에서 돌리는 워커</span></li>
+      <li><span class="idx">19</span><span class="file">labeling_page.md</span><span class="desc">시나리오 공통 라벨링 화면 — 가장 크고 많은 걸 엮는 파일</span></li>
+      <li><span class="idx">20</span><span class="file">start_page.md</span><span class="desc">home 디렉토리/트라이얼 선택 화면</span></li>
+      <li><span class="idx">21</span><span class="file">main_window.md</span><span class="desc">StartPage → 시나리오 선택 → LabelingPage 전환을 관장하는 최상위 조립점</span></li>
+    </ol>
+  </div>
+
+  <div class="tier">
+    <p class="tier-label entry"><span class="dot"></span>진입점</p>
+    <ol class="reading" start="22">
+      <li><span class="idx">22</span><span class="file">entry_points.md</span><span class="desc">front/main.py, run_app.py — MainWindow를 띄우는 두 개의 실행 스크립트</span></li>
+    </ol>
+  </div>
+
+  <footer class="note">
+    전체 22개 문서는 <code>docs/</code> 폴더에 있다. 이 지도는 각 문서의 "이 파일을
+    가져다 쓰는 곳" 표를 모아 다시 그린 것이라, 개별 관계의 근거(어느 함수가 왜
+    가져다 쓰는지)는 해당 문서를 보면 된다.
+  </footer>
+
+</div>
+
+</body>
+</html>

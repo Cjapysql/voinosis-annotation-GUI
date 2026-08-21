@@ -9,3 +9,8 @@ dist/
 data/
 labeled_output/
 .labeling_drafts/
+
+# 진단 스크립트(check_av_frames.py / describe_files.py / inspect_new_timestamp_schema.py) 임시 출력물
+check_av_frames_*.txt
+describe_files_output.txt
+inspect_new_timestamp_schema_output.txt

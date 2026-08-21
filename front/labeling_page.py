@@ -22,6 +22,7 @@ from back.draft_store import DraftStore
 from back.segment_exporter import SegmentExporter
 from back.label_taxonomy import AreaTaxonomy
 from back.audio_stitcher import build_continuous_audio
+from back.coverage import range_overlaps_any
 
 from PySide6.QtCore import Qt, Signal, QEvent
 from PySide6.QtWidgets import (
@@ -57,7 +58,8 @@ class LabelingPage(QWidget):
     def __init__(self, scenario: Scenario, trial: TrialData, task_windows: list[TaskWindow],
                  draft_store: DraftStore, exporter: SegmentExporter,
                  areas: list[AreaTaxonomy], audio_cache_dir: Path,
-                 camera_indices: dict, default_mic_name: str | None, audio_result, parent=None):
+                 camera_indices: dict, default_mic_name: str | None, audio_result,
+                 sensor_coverage: dict | None = None, parent=None):
         """camera_indices/default_mic_name/audio_result: front/labeling_page_loader.py의
         LabelingPageDataLoader가 백그라운드 스레드에서 미리 계산해둔 값. 카메라
         timestamp csv 파싱과 오디오 세그먼트 이어붙이기가 무거워서(수 초~수십 초),
@@ -79,6 +81,7 @@ class LabelingPage(QWidget):
         self._syncing_scrollbar = False  # 타임라인->스크롤바 동기화 중 재귀 신호 방지
 
         self.camera_indices: dict = camera_indices
+        self.sensor_coverage: dict = sensor_coverage or {}  # IMU/워치/레이더(+오디오) 대략적 커버리지
         self._compute_total_range()
         self._build_ui(default_mic_name=default_mic_name)
         self._build_playback(precomputed_audio_result=audio_result)
@@ -140,6 +143,17 @@ class LabelingPage(QWidget):
             if idx.first_t_sec is not None:
                 all_starts.append(idx.first_t_sec)
                 all_ends.append(idx.last_t_sec)
+
+        # 오디오도 라벨러가 직접 듣는 대상이라 타임라인 탐색 범위에 포함시킨다
+        # (카메라보다 먼저 시작했거나 늦게 끝났으면 그 구간은 원래 탐색 자체가
+        # 안 되는 문제가 있었음). IMU/워치/레이더는 라벨러가 직접 보고 듣는 게
+        # 아니라 탐색 범위에는 안 넣는다 - 경고 배너 쪽에서만 체크한다.
+        for name, segments in self.sensor_coverage.items():
+            if not name.startswith("오디오("):
+                continue
+            for seg_start, seg_end in segments:
+                all_starts.append(seg_start)
+                all_ends.append(seg_end)
 
         # task window(survey json 기준) 시각도 전체 범위에 합침 - 카메라 녹화 시작/종료가
         # survey 타임스탬프와 살짝 어긋나도(센서 시작 지연 등) 마커가 항상 타임라인 안에
@@ -532,26 +546,38 @@ class LabelingPage(QWidget):
 
         check_start = self.pending_start if self.pending_start is not None else window.start_ts
         check_end = self.pending_end if self.pending_end is not None else window.end_ts
-        if self._window_has_camera_coverage(check_start, check_end):
+        missing = self._missing_sensor_coverage(check_start, check_end)
+        if not missing:
             self.coverage_warning_label.setVisible(False)
         else:
             self.coverage_warning_label.setText(
-                "⚠ 이 구간에 해당하는 카메라/오디오 녹화 데이터가 없습니다 "
+                "⚠ 이 구간에 데이터가 없는 센서: " + ", ".join(missing) + " "
                 "(survey 시각과 실제 녹화 구간이 다르거나 파일이 누락됨)."
             )
             self.coverage_warning_label.setVisible(True)
 
         self._refresh_draft_list()
 
-    def _window_has_camera_coverage(self, start_ts: float, end_ts: float) -> bool:
-        """대략적인 체크: 이 구간이 어느 카메라 스트림의 녹화 범위와 조금이라도 겹치는지.
-        (스트림 내부에 gap이 있는 경우까지는 못 잡지만, 오늘 겪은 것처럼 아예 다른
-        세션 시간대를 가리키는 survey 데이터를 걸러내는 용도로는 충분함)"""
-        for idx in self.camera_indices.values():
-            if idx.first_t_sec is None:
-                continue
-            if idx.first_t_sec <= end_ts and start_ts <= idx.last_t_sec:
-                return True
+    def _missing_sensor_coverage(self, start_ts: float, end_ts: float) -> list[str]:
+        """이 구간에 데이터가 없는 센서 이름 목록(비어있으면 전부 있다는 뜻).
+        카메라는 7개 스트림 중 하나라도 겹치면 "카메라"는 있다고 본다(스트림별
+        개별 누락까지는 여기서 안 걸러내고, export 결과로 확인해야 함). 오디오/
+        IMU/워치/레이더는 self.sensor_coverage(세그먼트별 범위, 페이지 로드 시
+        미리 계산됨)를 이름별로 개별 확인한다."""
+        missing = []
+
+        camera_ok = any(
+            idx.first_t_sec is not None and idx.first_t_sec <= end_ts and start_ts <= idx.last_t_sec
+            for idx in self.camera_indices.values()
+        )
+        if not camera_ok:
+            missing.append("카메라")
+
+        for name, segments in self.sensor_coverage.items():
+            if not range_overlaps_any(start_ts, end_ts, segments):
+                missing.append(name)
+
+        return missing
         return False
 
     def _refresh_progress_label(self):
@@ -650,7 +676,7 @@ class LabelingPage(QWidget):
             QMessageBox.information(self, "선택 필요", "삭제할 구간을 목록에서 먼저 선택해주세요.")
             return
         draft = self.draft_store.drafts.get(draft_id)
-        if draft is not None and draft.committed:
+        if draft is not None and self.draft_store.is_committed_and_present(draft):
             QMessageBox.information(self, "삭제 불가", "이미 최종 저장된 구간은 삭제할 수 없습니다.")
             return
         self.draft_store.remove_draft(draft_id)
@@ -665,7 +691,7 @@ class LabelingPage(QWidget):
         draft = self.draft_store.drafts.get(draft_id)
         if draft is None:
             return
-        if draft.committed:
+        if self.draft_store.is_committed_and_present(draft):
             QMessageBox.information(self, "수정 불가", "이미 최종 저장된 구간은 수정할 수 없습니다.")
             return
 
@@ -697,7 +723,7 @@ class LabelingPage(QWidget):
         drafts = [d for d in self.draft_store.all_drafts_for_scenario(self.scenario)
                   if d.source_window_id == self.current_window.window_id]
         for i, d in enumerate(drafts, start=1):
-            prefix = "[완료] " if d.committed else ""
+            prefix = "[완료] " if self.draft_store.is_committed_and_present(d) else ""
             item = QListWidgetItem(f"{prefix}Seg{i}  [{d.start_ts:.2f} ~ {d.end_ts:.2f}]  {d.label_fields}")
             item.setData(Qt.UserRole, d.draft_id)
             self.draft_list.addItem(item)

@@ -18,6 +18,7 @@ from PySide6.QtCore import QThread, Signal
 from back.session_loader import TrialData
 from back.timestamp_index import CameraTimestampIndex
 from back.audio_stitcher import build_continuous_audio
+from back.coverage import compute_sensor_coverage
 
 # front/labeling_page.py의 DISPLAY_STREAMS 우선순위와 반드시 같은 순서를 유지해야 함
 # (오디오 세그먼트 경계 판단 기준 스트림을 그쪽과 동일하게 고르기 위함)
@@ -42,7 +43,8 @@ class LabelingPageDataLoader(QThread):
     # camera_indices는 튜플 키를 가진 dict라 Signal(dict, ...)로 선언하면 PySide6가
     # 스레드 간 큐잉 시 C++ 타입으로 변환하려다 실패한다(dict 값이 CameraTimestampIndex
     # 커스텀 객체라서 더더욱) - object로 선언해서 그냥 파이썬 객체 그대로 넘긴다.
-    loaded = Signal(object, object, object)  # (camera_indices, default_mic_name|None, audio_result|None)
+    # (camera_indices, default_mic_name|None, audio_result|None, sensor_coverage)
+    loaded = Signal(object, object, object, object)
     failed = Signal(str)
 
     def __init__(self, trial: TrialData, audio_cache_dir: Path, parent=None):
@@ -67,7 +69,12 @@ class LabelingPageDataLoader(QThread):
                 audio_result = build_continuous_audio(
                     mic_stream, self.audio_cache_dir, reference_segment_starts=reference_starts
                 )
+
+            # IMU/워치/레이더(+오디오)의 대략적인 커버리지 - "이 구간에 데이터가
+            # 없습니다" 경고 배너용. 카메라는 이미 위에서 정확하게 계산했으니
+            # 여기 포함 안 함.
+            sensor_coverage = compute_sensor_coverage(self.trial)
         except Exception as e:
             self.failed.emit(str(e))
             return
-        self.loaded.emit(camera_indices, default_mic_name, audio_result)
+        self.loaded.emit(camera_indices, default_mic_name, audio_result, sensor_coverage)

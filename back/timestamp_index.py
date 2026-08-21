@@ -264,8 +264,11 @@ class CameraTimestampIndex:
                 best = (dist, path, clamped_idx)
         return (best[1], best[2]) if best is not None else None
 
-    def time_range_to_file_ranges(self, t_start: float, t_end: float) -> list[tuple[Path, int, int]]:
-        """절대시간 구간 -> [(파일경로, local_start, local_end), ...] (시간순). export용."""
+    def time_range_to_file_ranges(self, t_start: float, t_end: float) -> list[tuple[Path, int, int, float, float, float]]:
+        """절대시간 구간 -> [(파일경로, local_start, local_end, 이 조각의 절대시작,
+        절대끝, 이 세그먼트의 보정된 fps), ...] (시간순). export용. 절대시작/끝과
+        fps는 요청 구간이 이 스트림의 세그먼트 사이 공백에 걸칠 때(경계 프레임을
+        반복해서 채움, back/segment_exporter.py) 필요하다."""
         results = []
         for i, (_, path) in enumerate(self.segment_files):
             bounds = self._segment_bounds(i)
@@ -281,7 +284,7 @@ class CameraTimestampIndex:
             lo = max(0, min(int(round((lo_t - start) * fps)), nframes))
             hi = max(0, min(int(round((hi_t - start) * fps)), nframes))
             if lo < hi:
-                results.append((path, lo, hi))
+                results.append((path, lo, hi, start + lo / fps, start + hi / fps, fps))
         return results
 
 
@@ -329,8 +332,11 @@ class AudioTimestampIndex:
                 info.append((wf.getframerate(), wf.getnframes()))
         return info
 
-    def time_range_to_file_ranges(self, t_start: float, t_end: float) -> list[tuple[Path, int, int]]:
-        """절대시간 구간 -> [(파일경로, local_sample_start, local_sample_end), ...] (시간순)."""
+    def time_range_to_file_ranges(self, t_start: float, t_end: float) -> list[tuple[Path, int, int, float, float, int]]:
+        """절대시간 구간 -> [(파일경로, local_sample_start, local_sample_end, 이
+        조각의 절대시작, 절대끝, 샘플레이트), ...] (시간순). 절대시작/끝은 요청
+        구간이 세그먼트 사이 공백에 걸칠 때 무음을 얼마나 채울지 계산하는 데
+        필요하다(back/segment_exporter.py)."""
         results = []
         for i, (_, path) in enumerate(self.segment_files):
             framerate, nframes = self._file_info[i]
@@ -343,5 +349,5 @@ class AudioTimestampIndex:
             lo = max(0, min(int(round((lo_t - seg_start) * framerate)), nframes))
             hi = max(0, min(int(round((hi_t - seg_start) * framerate)), nframes))
             if lo < hi:
-                results.append((path, lo, hi))
+                results.append((path, lo, hi, seg_start + lo / framerate, seg_start + hi / framerate, framerate))
         return results

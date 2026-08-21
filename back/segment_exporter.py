@@ -164,18 +164,73 @@ class SegmentExporter:
             index = self._get_camera_index((position, modality), stream)
             file_ranges = index.time_range_to_file_ranges(draft.start_ts, draft.end_ts)
             if not file_ranges:
-                continue  # 이 스트림엔 해당 구간 프레임이 없음
+                continue  # 이 스트림엔 해당 구간에 실제 프레임이 하나도 없음 - 파일 자체를 안 만듦
 
             out_path = out_dir / f"{position}_{modality}.mp4"
             # road 카메라는 광축 기준 180도 돌아간 채 장착되어 있어서 저장 전에 보정
-            self._write_video_cut(file_ranges, out_path, stream_label=f"{position}_{modality}",
+            self._write_video_cut(file_ranges, draft.start_ts, draft.end_ts, out_path,
+                                   stream_label=f"{position}_{modality}",
                                    flip_180=(position == "road"))
 
-    def _write_video_cut(self, file_ranges: list, out_path: Path, stream_label: str, flip_180: bool = False):
+    def _peek_frame(self, path: Path, local_idx: int):
+        """딱 한 프레임만 읽어서 반환 (세그먼트 경계 프레임을 공백 채우기용으로
+        가져올 때 씀 - 아래 주 반복문의 seek+검증+폴백과는 별개로, 어차피 한
+        프레임만 필요하니 단순하게 seek 후 바로 읽는다)."""
+        cap = cv2.VideoCapture(str(path))
+        if local_idx > 0:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, local_idx)
+        ok, frame = cap.read()
+        cap.release()
+        return frame if ok else None
+
+    def _write_video_cut(self, file_ranges: list, t_start: float, t_end: float,
+                          out_path: Path, stream_label: str, flip_180: bool = False):
+        """file_ranges: index.time_range_to_file_ranges(t_start, t_end)의 결과
+        (파일경로, local_start, local_end, 절대시작, 절대끝, fps) 튜플 리스트.
+
+        요청 구간[t_start, t_end] 안에 이 스트림의 세그먼트 사이 공백이 걸치면
+        (예: 카메라가 중간에 잠깐 끊겼다 재개됨), 그 공백 동안은 재생 중
+        CameraTimestampIndex.frame_at_time()이 하는 것과 정확히 같은 원칙 -
+        공백의 절반 지점을 기준으로 앞쪽은 직전 실제 프레임을, 뒤쪽은 다음 실제
+        프레임을 반복해서 채운다. 요청 구간 맨 앞/뒤의 공백(반대쪽에 실제
+        프레임이 없는 경우)은 있는 쪽 프레임으로 전부 채운다."""
         writer = None
-        for path, local_start, local_end in file_ranges:
+        fps_for_writer = None
+        cursor_ts = t_start
+        prev_last_frame = None
+
+        def write_repeated(frame, n):
+            nonlocal writer
+            if frame is None or n <= 0:
+                return
+            out_frame = cv2.rotate(frame, cv2.ROTATE_180) if flip_180 else frame
+            if writer is None:
+                h, w = out_frame.shape[:2]
+                writer = make_video_writer(out_path, fps_for_writer or 30.0, (w, h))
+            for _ in range(n):
+                writer.write(out_frame)
+
+        for path, local_start, local_end, abs_start, abs_end, seg_fps in file_ranges:
+            gap = abs_start - cursor_ts
+            if gap > 1e-6:
+                if prev_last_frame is not None:
+                    # 세그먼트 사이 공백 - 절반은 이전 구간 마지막 프레임, 절반은
+                    # 이번 구간 첫 프레임 (frame_at_time의 "더 가까운 쪽" 원칙과 동일)
+                    half_n = int(round((gap / 2.0) * seg_fps))
+                    write_repeated(prev_last_frame, half_n)
+                    first_frame = self._peek_frame(path, local_start)
+                    remain_n = int(round(gap * seg_fps)) - half_n
+                    write_repeated(first_frame, remain_n)
+                else:
+                    # 요청 구간 맨 앞의 공백(이전 실제 데이터가 아예 없음) - 이번
+                    # 구간 첫 프레임으로 전부 채움
+                    first_frame = self._peek_frame(path, local_start)
+                    write_repeated(first_frame, int(round(gap * seg_fps)))
+                cursor_ts = abs_start
+
             cap = cv2.VideoCapture(str(path))
             fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+            fps_for_writer = fps_for_writer or fps
 
             # local_start까지 프레임 0부터 전부 디코딩하면(구 방식) 긴 세그먼트
             # 파일 뒤쪽 구간을 자를 때 매우 느림(실측: 14만 프레임짜리 세그먼트
@@ -201,21 +256,35 @@ class SegmentExporter:
                         f"도달={landed}) 순차 디코딩으로 대체했습니다 - 정확도는 유지되지만 느렸을 수 있습니다."
                     )
 
+            last_raw_frame = None
             while True:
                 ok, frame = cap.read()
                 if not ok:
                     break
                 if local_start <= frame_idx < local_end:
-                    if flip_180:
-                        frame = cv2.rotate(frame, cv2.ROTATE_180)
+                    out_frame = cv2.rotate(frame, cv2.ROTATE_180) if flip_180 else frame
                     if writer is None:
-                        h, w = frame.shape[:2]
+                        h, w = out_frame.shape[:2]
                         writer = make_video_writer(out_path, fps, (w, h))
-                    writer.write(frame)
+                    writer.write(out_frame)
+                    last_raw_frame = frame  # 회전 전 원본 - write_repeated가 다시 회전시키므로 원본을 기억해야 함
                 frame_idx += 1
                 if frame_idx >= local_end:
                     break
             cap.release()
+
+            cursor_ts = abs_end
+            # 다음 구간과의 공백(또는 맨 뒤 공백)을 채울 때 쓸, 이번 구간의
+            # 마지막 원본(회전 전) 프레임을 기억해둔다 - _peek_frame도 항상
+            # 회전 전 원본을 반환하므로 일관됨
+            prev_last_frame = last_raw_frame if last_raw_frame is not None else self._peek_frame(path, local_end - 1)
+
+        # 요청 구간 맨 뒤의 공백(이후 실제 데이터가 아예 없음) - 마지막 실제
+        # 프레임으로 전부 채움
+        tail_gap = t_end - cursor_ts
+        if tail_gap > 1e-6 and prev_last_frame is not None:
+            write_repeated(prev_last_frame, int(round(tail_gap * (fps_for_writer or 30.0))))
+
         if writer is not None:
             writer.release()
 
@@ -256,17 +325,40 @@ class SegmentExporter:
             index = self._get_audio_index(mic_name, stream, reference_starts)
             file_ranges = index.time_range_to_file_ranges(draft.start_ts, draft.end_ts)
             if not file_ranges:
-                continue  # 이 마이크엔 해당 구간 오디오가 없음(세그먼트 사이 gap 등)
+                continue  # 이 마이크엔 해당 구간에 실제 오디오가 하나도 없음 - 파일 자체를 안 만듦
+
+            # file_ranges 중 첫 조각으로 채널 수를 미리 확인해둔다 - 앞쪽 공백을
+            # 무음으로 채워야 할 수도 있는데, 그 시점엔 아직 실제 오디오를 하나도
+            # 안 읽어서 채널 수를 모르기 때문.
+            with sf.SoundFile(str(file_ranges[0][0])) as probe:
+                samplerate = probe.samplerate
+                channels = probe.channels
+
+            def make_silence(n_frames: int):
+                shape = (n_frames,) if channels == 1 else (n_frames, channels)
+                return np.zeros(shape, dtype=np.int16)
 
             chunks = []
-            samplerate = None
-            for path, s0, s1 in file_ranges:
+            cursor_ts = draft.start_ts
+            for path, s0, s1, abs_start, abs_end, rate in file_ranges:
+                # 이 조각 앞의 공백(세그먼트 사이 gap, 또는 요청 구간 맨 앞의
+                # 공백) - 재생 중 무음을 채우는 audio_stitcher.py와 동일한 원칙
+                gap = abs_start - cursor_ts
+                if gap > 1e-6:
+                    n = int(round(gap * samplerate))
+                    if n > 0:
+                        chunks.append(make_silence(n))
                 with sf.SoundFile(str(path)) as f:
                     f.seek(s0)
-                    chunks.append(f.read(frames=(s1 - s0)))
-                    samplerate = f.samplerate
-            if not chunks:
-                continue
+                    chunks.append(f.read(frames=(s1 - s0), dtype="int16"))
+                cursor_ts = abs_end
+
+            # 요청 구간 맨 뒤의 공백(이후 실제 오디오가 아예 없음)
+            tail_gap = draft.end_ts - cursor_ts
+            if tail_gap > 1e-6:
+                n = int(round(tail_gap * samplerate))
+                if n > 0:
+                    chunks.append(make_silence(n))
 
             data = np.concatenate(chunks)
             out_path = out_dir / f"{mic_name}.wav"

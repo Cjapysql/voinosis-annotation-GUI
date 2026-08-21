@@ -82,20 +82,28 @@ class DraftStore:
             key=lambda d: d.start_ts,
         )
 
-    def committed_window_ids(self, scenario: Scenario) -> set:
-        """이미 최종 저장된 draft가 있는 source_window_id 집합 (진행 상황 표시용).
+    def is_committed_and_present(self, draft: LabelDraft) -> bool:
+        """draft.committed가 True이고, segment_dir이 기록돼 있다면 그 폴더가
+        실제로 디스크에 아직 있는지까지 확인한다 - 라벨러가 결과물을 수동으로
+        지워도 "완료"로 계속 보이는 걸 막기 위함. segment_dir을 모르는(이 필드가
+        생기기 전에 커밋된) 옛 기록은 확인할 방법이 없으니 그대로 완료로 인정한다.
+        "완료" 여부를 판단하는 모든 곳(진행 상황 배너, 목록의 [완료] 표시,
+        수정/삭제 차단)이 이 메서드 하나로 통일돼야 한다 - 각자 따로 판단하면
+        서로 다른 결론이 나서 혼란스러워진다."""
+        if not draft.committed:
+            return False
+        if draft.segment_dir and not Path(draft.segment_dir).exists():
+            return False
+        return True
 
-        segment_dir이 기록돼 있는(신규) draft는 그 폴더가 실제로 디스크에
-        아직 있는지 확인한다 - 라벨러가 결과물을 수동으로 지워도 "완료"로 계속
-        보이는 걸 막기 위함. segment_dir을 모르는(이 필드가 생기기 전에 커밋된)
-        옛 기록은 확인할 방법이 없으니 그대로 완료로 인정한다."""
+    def committed_window_ids(self, scenario: Scenario) -> set:
+        """이미 최종 저장된 draft가 있는 source_window_id 집합 (진행 상황 표시용)."""
         result = set()
         for d in self.drafts.values():
-            if d.scenario != scenario or not d.committed or not d.source_window_id:
+            if d.scenario != scenario or not d.source_window_id:
                 continue
-            if d.segment_dir and not Path(d.segment_dir).exists():
-                continue
-            result.add(d.source_window_id)
+            if self.is_committed_and_present(d):
+                result.add(d.source_window_id)
         return result
 
     def find_overlap(self, scenario: Scenario, start_ts: float, end_ts: float,

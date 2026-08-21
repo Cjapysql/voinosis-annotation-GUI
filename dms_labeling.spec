@@ -44,7 +44,7 @@ a = Analysis(
         "back.models", "back.survey_parser", "back.session_loader",
         "back.timestamp_index", "back.draft_store", "back.segment_exporter",
         "back.label_taxonomy", "back.radar_index", "back.video_codec",
-        "back.audio_stitcher",
+        "back.audio_stitcher", "back.coverage",
         "front.main_window", "front.start_page", "front.labeling_page",
         "front.stream_player", "front.playback_controller",
         "front.export_worker", "front.labeling_page_loader",

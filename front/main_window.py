@@ -127,8 +127,8 @@ class MainWindow(QMainWindow):
                 btn.setEnabled(False)
             loader = LabelingPageDataLoader(self._trial, self._audio_cache_dir, parent=self)
             loader.loaded.connect(
-                lambda camera_indices, mic_name, audio_result:
-                    self._finish_open_labeling(scenario, camera_indices, mic_name, audio_result)
+                lambda camera_indices, mic_name, audio_result, sensor_coverage:
+                    self._finish_open_labeling(scenario, camera_indices, mic_name, audio_result, sensor_coverage)
             )
             loader.failed.connect(self._on_labeling_page_load_failed)
             self._pending_loader = loader  # 참조 유지 (없으면 GC로 스레드가 조기 정리될 수 있음)
@@ -137,7 +137,7 @@ class MainWindow(QMainWindow):
         self.stack.setCurrentWidget(self._labeling_pages[scenario])
 
     def _finish_open_labeling(self, scenario: Scenario, camera_indices: dict,
-                               default_mic_name, audio_result):
+                               default_mic_name, audio_result, sensor_coverage: dict):
         for btn in self._scenario_buttons:
             btn.setEnabled(True)
         windows = self._task_windows_by_scenario.get(scenario, [])
@@ -146,6 +146,7 @@ class MainWindow(QMainWindow):
             draft_store=self._draft_store, exporter=self._exporter,
             areas=self.areas, audio_cache_dir=self._audio_cache_dir,
             camera_indices=camera_indices, default_mic_name=default_mic_name, audio_result=audio_result,
+            sensor_coverage=sensor_coverage,
         )
         page.back_requested.connect(lambda: self._on_back_from_labeling(page))
         self._labeling_pages[scenario] = page
