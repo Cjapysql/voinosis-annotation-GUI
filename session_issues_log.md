@@ -459,6 +459,13 @@
   있으면 자동으로 번들에 포함시켜주므로 별도 수정 불필요, 신규 `QThread`
   서브클래스(`ExportWorker`, `LabelingPageDataLoader`)는 `PySide6.QtCore`가
   이미 hiddenimports에 있어 별도 처리 불필요함을 확인.
+- **후속 발견**: 이 점검 이후 추가된 `back/coverage.py`(센서 커버리지 조회
+  모듈)가 `hiddenimports` 목록에는 반영되지 않은 채 커밋되지 않고 남아있던
+  것을, `README.md`/`DEPLOY.md`/`CLAUDE.md` 문서 전면 정비 작업 중 spec
+  파일을 다시 대조하다가 발견 → `back.coverage`를 목록에 추가하고
+  `back/coverage.py` 자체도 커밋에 포함 (그 전까지는 `front/`에서
+  `from back.coverage import ...`로 이미 참조되고 있었는데도 파일 자체가
+  git에 올라가 있지 않은 상태였음). **[해결]**
 
 ## 17. 재생 중 wall-clock 외삽이 실제 오디오 위치보다 앞서나가는 조기 정지 버그
 
