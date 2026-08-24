@@ -17,18 +17,17 @@ DMS(운전자 모니터링 시스템) 멀티센서 주행 녹화 데이터에 `d
 |---|---|
 | `README.md` (이 파일) | 프로젝트 개요, 실행 방법, 확정된 규칙, 아직 안 정해진 것 |
 | `CLAUDE.md` | Claude Code(AI 코딩 에이전트)용 프로젝트 요약. 아키텍처/명령어를 간결하게 정리했고, 사람이 읽어도 같은 내용이 유용하다 |
-| `docs/*.md` (파일별 상세 문서, 22개) | `back/`, `front/` 각 소스 파일 하나당 문서 하나. 그 파일을 "가져다 쓰는 곳" 표, 핵심 메서드 동작 원리, `design_considerations.md`/`session_issues_log.md` 관련 절 번호 링크 포함. 코드를 고치기 전에 해당 파일 문서부터 읽는 것을 권장 |
+| `docs/*.md` (파일별 상세 문서, 22개) | `back/`, `front/` 각 소스 파일 하나당 문서 하나. 그 파일을 "가져다 쓰는 곳" 표, 핵심 메서드 동작 원리, `technical_reference.md` 관련 절 번호 링크 포함. 코드를 고치기 전에 해당 파일 문서부터 읽는 것을 권장 |
 | `docs/module_map.html` (`.png`/`.jpg`는 같은 내용의 스크린샷) | 22개 파일 간 의존 관계를 topological depth 기준 6단계로 그린 다이어그램 + 추천 읽는 순서. 브라우저로 열면 됨 |
-| `design_considerations.md` | 왜 이렇게 설계했는지(대안과의 트레이드오프). 17개 절, 번호로 `docs/*.md`에서 역참조됨 |
-| `session_issues_log.md` | 개발 중 실제로 겪은 버그/이슈와 그걸 어떻게 발견하고 고쳤는지의 기록. 대화 인용 포함. 18개 절, 번호로 `docs/*.md`에서 역참조됨 |
+| `technical_reference.md` | 구현/설계/버그 히스토리 통합 문서. "어떻게 구현되어 있고, 왜 이렇게 설계했고, 어떤 버그를 찾아서 어떻게 고쳤나"를 주제 24개로 통합 서술(2부) + 22개 파일 각각의 구현 상세를 모은 참조(3부). 대화 인용 포함 |
 | `DEPLOY.md` | 개발자가 비개발자 라벨러에게 실행 파일로 배포하는 방법 (리눅스/윈도우 빌드) |
 | `설치_안내.md` | 라벨러(비개발자) 본인이 보는 설치/실행 안내. 개발 관련 내용 없음 |
 
 새 기능을 추가하거나 버그를 고치는 작업 순서로는 다음을 권장한다:
 1. `docs/module_map.html`에서 건드릴 파일이 어디 위치하는지, 무엇을 가져다 쓰는지 확인
-2. 그 파일의 `docs/xxx.md`를 읽고, 링크된 `design_considerations.md`/`session_issues_log.md` 절을 따라가서 배경 파악
+2. 그 파일의 `docs/xxx.md`를 읽고, 링크된 `technical_reference.md` 절을 따라가서 배경(구현 이유, 관련 버그 이력) 파악
 3. 코드 수정
-4. 관련 `docs/xxx.md`와 (설계가 바뀌었다면) `design_considerations.md`/`session_issues_log.md`를 갱신 — 이 저장소는 코드를 바꾸면 관련 문서도 같이 갱신하는 것을 관례로 한다
+4. 관련 `docs/xxx.md`와 (설계가 바뀌었거나 버그를 고쳤다면) `technical_reference.md`를 갱신 — 이 저장소는 코드를 바꾸면 관련 문서도 같이 갱신하는 것을 관례로 한다
 
 ## 폴더 구조
 
@@ -120,7 +119,7 @@ cd front && python main.py /path/to/DMS_Actions.xlsx
 7. **segment 번호 체계**: `distraction_segmentNNN` / `drowsiness_segmentNNN`는 시나리오별로 완전히 독립된 카운터. `cognitive`는 카운터 없이 `pre_nback1~3, pre_cbt1~3, post_nback1~3, post_cbt1~3` 고정 이름 사용
 8. **라벨 입력 UX**: 카테고리형 필드(영역/동사/명사/도로상황/날씨 등)는 목록 선택 + "기타" 선택 시 자유 서술 입력 (`LabelDraft.is_free_text_override`로 필드별 표시)
 9. **저장 정책**: 작업 중엔 `DraftStore`에 timestamp+label만 임시 저장(자유롭게 수정 가능), "최종 저장" 시점에만 `SegmentExporter`가 실제 파일을 잘라 커밋 (커밋 후 되돌리기 없음, 비가역으로 취급)
-10. **export 시 센서 간 길이 패딩**: 라벨 구간이 어떤 센서의 실제 녹화 공백과 일부만 겹치면(완전히 안 겹치는 게 아니라), 그 센서 출력을 요청 구간 길이(`end_ts - start_ts`)에 맞춰 채운다 — 오디오는 무음(0 PCM), 비디오는 재생 중 공백 처리와 동일한 원칙(공백의 시간상 중간 지점을 기준으로 더 가까운 쪽 경계 프레임을 반복)으로 채운다. 겹치는 실제 데이터가 하나도 없는 센서는 여전히 파일 자체를 만들지 않음 (`design_considerations.md` 17번, `session_issues_log.md` 18번)
+10. **export 시 센서 간 길이 패딩**: 라벨 구간이 어떤 센서의 실제 녹화 공백과 일부만 겹치면(완전히 안 겹치는 게 아니라), 그 센서 출력을 요청 구간 길이(`end_ts - start_ts`)에 맞춰 채운다 — 오디오는 무음(0 PCM), 비디오는 재생 중 공백 처리와 동일한 원칙(공백의 시간상 중간 지점을 기준으로 더 가까운 쪽 경계 프레임을 반복)으로 채운다. 겹치는 실제 데이터가 하나도 없는 센서는 여전히 파일 자체를 만들지 않음 (`technical_reference.md` 2부 17번)
 
 ## 아직 확정 안 된 것 (TODO)
 
@@ -136,8 +135,8 @@ cd front && python main.py /path/to/DMS_Actions.xlsx
 - PulseAudio 더미 싱크(`module-null-sink`)로 `QMediaPlayer`를 실제 이벤트 루프에서 재생시켜 `positionChanged`가 진행되는지 확인
 - `back/`의 함수를 실제 trial 데이터(실측 timestamp csv, 실제 mp4/wav)에 직접 호출해 프레임 수/바이트/시각 값을 계산값과 비교. 손실 재인코딩 때문에 완전 바이트 동일 비교가 안 되는 mp4의 경우 평균 픽셀 절대 차이(mean abs diff)로 "같은 내용의 압축 잡음"과 "실제로 다른 내용"을 구분 (전자는 관측상 2~7 범위, 후자는 26~30 범위)
 
-세부 검증 시나리오와 실제로 잡아낸 버그들은 `session_issues_log.md`에 절별로
-정리돼 있다.
+세부 검증 시나리오와 실제로 잡아낸 버그들은 `technical_reference.md` 2부에
+주제별로 정리돼 있다.
 
 ## 빌드/배포
 

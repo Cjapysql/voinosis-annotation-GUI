@@ -20,17 +20,18 @@ undocumented:
   a file.
 - `docs/module_map.html` (`.png`/`.jpg` are static renders of the same page) — dependency diagram across
   all 22 files plus a suggested reading order.
-- `design_considerations.md` — numbered sections on why things are designed the way they are (trade-offs
-  considered). `docs/*.md` cross-reference these by number.
-- `session_issues_log.md` — numbered sections logging bugs actually hit during development and how they
-  were found/fixed, with conversation excerpts. `docs/*.md` cross-reference these by number.
+- `technical_reference.md` — merged design-rationale + bug-history document (formerly two separate files,
+  `design_considerations.md` and `session_issues_log.md`, now retired). Part 2 has ~24 numbered topics each
+  combining why something is designed the way it is, how it's implemented, and what bugs were found/fixed
+  for it (with conversation excerpts); Part 3 has a per-file implementation reference for all 22
+  `back/`/`front/` files. `docs/*.md` cross-reference Part 2 by topic number.
 - `README.md` — human-facing overview/onboarding entry point; largely mirrors this file's Architecture and
   Domain-rules sections plus module tables, TODOs, and a pointer to `DEPLOY.md`.
 - `DEPLOY.md` / `설치_안내.md` — building/distributing the packaged executable to non-developer labelers.
 
 When a change alters architecture, a domain rule, or resolves/adds a TODO, update the matching section in
-this file and in `README.md` (and the relevant `docs/*.md` / `design_considerations.md` /
-`session_issues_log.md` entry) in the same change — these are treated as living docs, not one-off write-ups.
+this file and in `README.md` (and the relevant `docs/*.md` / `technical_reference.md` entry) in the same
+change — these are treated as living docs, not one-off write-ups.
 
 ## Commands
 
@@ -149,7 +150,7 @@ concurrently.
   Audio pads with real silence (`np.zeros`); video pads by repeating the nearer boundary frame, split at
   the gap's temporal midpoint — deliberately mirroring `CameraTimestampIndex.frame_at_time()`'s existing
   playback-time gap-clamping behavior rather than a simpler "always hold last frame" rule (explicit design
-  choice; see `design_considerations.md` 17 and `session_issues_log.md` 18).
+  choice; see `technical_reference.md` Part 2, topic 17).
 
 ### Headless verification (no display/audio device in the reference dev environment)
 

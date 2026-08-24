@@ -29,7 +29,7 @@ class Scenario(str, Enum):
 `session_dir/{scenario}/` 폴더명, `annotations/{scenario}.csv` 파일명, 세그먼트 이름
 접두어로 그대로 쓰인다.
 
-세 시나리오는 **세그멘테이션 자유도가 서로 다르다** (설계 원칙, `design_considerations.md` 5번):
+세 시나리오는 **세그멘테이션 자유도가 서로 다르다** (설계 원칙, `technical_reference.md` 2부 6번):
 - `DISTRACTION`: 라벨러가 완전히 자유롭게 구간을 나눔. 세그먼트 번호는 독립 카운터
   (`SegmentNamer`, `back/segment_exporter.py`).
 - `DROWSINESS`: survey json에서 자동 계산된 구간(`DistractionTaskWindow.drowsiness_window`)이
@@ -97,7 +97,7 @@ distraction과 **같은 리스트를 그대로 재사용**한다(`parsed["distra
 
 **라벨러가 실제로 확정하기 전까지 임시로 들고 있는 작업 중 라벨.** "최종 저장" 전까지는
 `DraftStore`(로컬 JSON 파일, `back/draft_store.py`)에만 존재하고 실제 센서 파일은
-전혀 잘리지 않는다 - Draft/Export 분리 원칙(`design_considerations.md` 4번)에서 이 상태를 표현하는 타입.
+전혀 잘리지 않는다 - Draft/Export 분리 원칙(`technical_reference.md` 2부 5번)에서 이 상태를 표현하는 타입.
 
 - `draft_id`: uuid 문자열. `DraftStore.drafts` dict의 키.
 - `start_ts`/`end_ts`: **여기는 `TaskWindow`와 달리 처음부터 float(unix epoch)다** -
@@ -123,7 +123,7 @@ distraction과 **같은 리스트를 그대로 재사용**한다(`parsed["distra
   방법이 없어서 그대로 신뢰 - 하위호환). **이 세션 초반엔 `committed` 플래그만 보고
   판단하는 곳이 세 군데(진행 배너, `[완료]` 표시, 수정/삭제 차단) 중 하나만 디스크
   확인을 거치는 버그가 있었고, `is_committed_and_present()`로 통일해서 고쳤다** -
-  자세한 경위는 `session_issues_log.md` 17번 섹션 이후(최근 대화) 참고.
+  자세한 경위는 `technical_reference.md` 2부 13번 참고.
 
 ## 실제로 어떻게 쓰이는지 (front/labeling_page.py 기준 흐름)
 
