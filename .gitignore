@@ -14,6 +14,3 @@ labeled_output/
 check_av_frames_*.txt
 describe_files_output.txt
 inspect_new_timestamp_schema_output.txt
-
-# run_app.py 크래시 로그(실행 파일과 같은 폴더에 생성됨)
-dms_labeling_error.log
