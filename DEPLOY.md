@@ -91,7 +91,7 @@ cd dist/   # 또는 배포받은 압축을 푼 폴더 (dms_labeling 실행 파�
 ./assets/install_linux.sh
 ```
 
-아이콘 등록 자체는 sudo 권한 없이 현재 사용자 계정(~/.local/share/dms_labeling,
-~/.local/share/applications)에만 설치된다(ffmpeg가 이미 있으면 sudo
+아이콘 등록 자체는 sudo 권한 없이 현재 사용자 계정(\~/.local/share/dms_labeling,
+\~/.local/share/applications)에만 설치된다(ffmpeg가 이미 있으면 sudo
 비밀번호 요청 자체가 없음). dist/dms_labeling(개발 프로젝트 안)과
 dms_labeling(배포 압축 최상위) 두 경로 모두 자동으로 찾는다.

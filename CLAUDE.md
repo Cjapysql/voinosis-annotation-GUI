@@ -130,7 +130,7 @@ draft-store file I/O concurrently.
   (TaskWindow/LabelDraft.boundaries_locked — see LabelingPage.boundaries_locked).
 - Segment numbering: distraction_segmentNNN and drowsiness_segmentNNN are independent counters per
   scenario; cognitive has no counter and instead uses fixed names
-  pre_nback1~3, pre_cbt1~3, post_nback1~3, post_cbt1~3.
+  pre_nback1-3, pre_cbt1-3, post_nback1-3, post_cbt1-3.
 - Draft → commit is one-way: DraftStore holds editable timestamp+label state; only the 최종 저장 (final
   save) action invokes SegmentExporter, which is treated as an irreversible commit — there is no undo
   button in the UI. The one escape hatch: DraftStore.is_committed_and_present() checks
@@ -159,8 +159,8 @@ For back/-only changes (no Qt involved), the recurring pattern instead is callin
 against a real trial's data (real segment CSVs, real mp4/wav — not synthetic) and checking the numeric
 result (frame counts, byte offsets, computed timestamps) against an independently-computed expected value.
 Because mp4 re-encoding is lossy, byte-identity checks don't work for video frames even when the source
-content is genuinely unchanged — mean absolute pixel difference is used instead, with ~2-7 observed for
-same content/encoder noise vs. ~26-30 for actually different content.
+content is genuinely unchanged — mean absolute pixel difference is used instead, with \~2-7 observed for
+same content/encoder noise vs. \~26-30 for actually different content.
 
 ## Known open items
 

@@ -84,7 +84,7 @@ DISPLAY_STREAMS(front/labeling_page.py)가 라벨링 화면에 실제로 그릴 
 4. **drowsiness 구간**: driving_task.start_time(질문 시작 시각) **이전** 1분 고정, 라벨러가 조정 불가 (구두 답변 음성이 안 섞이도록)
 5. **distraction 구간**: 하나의 task window 안에서 지시문이 복합 동작이면(예: 열었다가 닫아주세요) 라벨러가 필요한 만큼 서브구간으로 나눠 각각 라벨링 가능. 서브구간 개수 제한 없음
 6. **구간 잠금 여부**: drowsiness/cognitive는 survey json에서 계산된 구간을 그대로 쓰고 라벨러가 재조정 불가(TaskWindow/LabelDraft.boundaries_locked). distraction만 자유롭게 여러 서브구간으로 자를 수 있음
-7. **segment 번호 체계**: distraction_segmentNNN / drowsiness_segmentNNN는 시나리오별로 완전히 독립된 카운터. cognitive는 카운터 없이 pre_nback1~3, pre_cbt1~3, post_nback1~3, post_cbt1~3 고정 이름 사용
+7. **segment 번호 체계**: distraction_segmentNNN / drowsiness_segmentNNN는 시나리오별로 완전히 독립된 카운터. cognitive는 카운터 없이 pre_nback1-3, pre_cbt1-3, post_nback1-3, post_cbt1-3 고정 이름 사용
 8. **라벨 입력 UX**: 카테고리형 필드(영역/동사/명사/도로상황/날씨 등)는 목록 선택 + 기타 선택 시 자유 서술 입력 (LabelDraft.is_free_text_override로 필드별 표시)
 9. **저장 정책**: 작업 중엔 DraftStore에 timestamp+label만 임시 저장(자유롭게 수정 가능), 최종 저장 시점에만 SegmentExporter가 실제 파일을 잘라 커밋 (앱 화면 안에는 되돌리기 버튼 없음, 비가역으로 취급 - 단 결과 폴더를 파일시스템에서 직접 지우면 is_committed_and_present()가 이를 감지해 다시 미완료로 취급함, 의도적으로 번거로운 경로)
 10. **export 시 센서 간 길이 패딩**: 라벨 구간이 어떤 센서의 실제 녹화 공백과 일부만 겹치면(완전히 안 겹치는 게 아니라), 그 센서 출력을 요청 구간 길이(end_ts - start_ts)에 맞춰 채운다 — 오디오는 무음(0 PCM), 비디오는 재생 중 공백 처리와 동일한 원칙(공백의 시간상 중간 지점을 기준으로 더 가까운 쪽 경계 프레임을 반복)으로 채운다. 겹치는 실제 데이터가 하나도 없는 센서는 여전히 파일 자체를 만들지 않음.
