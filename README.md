@@ -121,23 +121,6 @@ cd front && python main.py /path/to/DMS_Actions.xlsx
 9. **저장 정책**: 작업 중엔 `DraftStore`에 timestamp+label만 임시 저장(자유롭게 수정 가능), "최종 저장" 시점에만 `SegmentExporter`가 실제 파일을 잘라 커밋 (커밋 후 되돌리기 없음, 비가역으로 취급)
 10. **export 시 센서 간 길이 패딩**: 라벨 구간이 어떤 센서의 실제 녹화 공백과 일부만 겹치면(완전히 안 겹치는 게 아니라), 그 센서 출력을 요청 구간 길이(`end_ts - start_ts`)에 맞춰 채운다 — 오디오는 무음(0 PCM), 비디오는 재생 중 공백 처리와 동일한 원칙(공백의 시간상 중간 지점을 기준으로 더 가까운 쪽 경계 프레임을 반복)으로 채운다. 겹치는 실제 데이터가 하나도 없는 센서는 여전히 파일 자체를 만들지 않음 (`technical_reference.md` 2부 17번)
 
-## 아직 확정 안 된 것 (TODO)
-
-1. **watch 폴더 실제 파일/컬럼명**: `watch_hr.csv` 등의 정확한 컬럼명(예: `timestamp` vs `t_sec`)을 실측 샘플로 확인 못함 — 현재 `_filter_csv_by_time`이 `timestamp`/`t_sec` 둘 다 시도하도록 방어적으로 짜뒀지만, 실제 컬럼명이 다르면 조용히 빈 파일이 나올 수 있음
-2. **distraction_task_id → Area/Verb/Noun 매핑**: `"1_2"` 같은 id가 xlsx의 verb/noun 순서와 정확히 일치하지 않아서, 자동 프리필이 아니라 라벨러가 `distraction_task_text` 힌트를 보고 직접 선택하는 방식으로 남겨둠 (매핑표가 따로 있으면 자동 프리필 가능)
-3. **레이더 seg 폴더 간 시간 역전 가능성**: `RadarTimestampIndex`는 안전하게 `ros_time_sec` 기준으로 전체 재정렬하지만, 서로 다른 seg의 프레임이 실제로 뒤섞여 저장되는 경우가 있다면(정상적으론 없어야 함) 프레임 하나하나가 별도 파일 I/O를 일으켜 느려질 수 있음 — 필요시 연속 구간 배치 read로 최적화 가능
-
-## 검증 방법
-
-디스플레이/오디오 장치가 없는 환경(개발 컨테이너)에서는 다음 방식을 조합해 검증한다:
-- `QT_QPA_PLATFORM=offscreen`으로 `QApplication`/각 페이지가 예외 없이 생성되는지 확인
-- `widget.grab()`으로 실제 렌더링된 화면을 PNG로 저장해 레이아웃 확인
-- PulseAudio 더미 싱크(`module-null-sink`)로 `QMediaPlayer`를 실제 이벤트 루프에서 재생시켜 `positionChanged`가 진행되는지 확인
-- `back/`의 함수를 실제 trial 데이터(실측 timestamp csv, 실제 mp4/wav)에 직접 호출해 프레임 수/바이트/시각 값을 계산값과 비교. 손실 재인코딩 때문에 완전 바이트 동일 비교가 안 되는 mp4의 경우 평균 픽셀 절대 차이(mean abs diff)로 "같은 내용의 압축 잡음"과 "실제로 다른 내용"을 구분 (전자는 관측상 2~7 범위, 후자는 26~30 범위)
-
-세부 검증 시나리오와 실제로 잡아낸 버그들은 `technical_reference.md` 2부에
-주제별로 정리돼 있다.
-
 ## 빌드/배포
 
 라벨러(비개발자)에게 실행 파일로 배포하는 방법은 `DEPLOY.md` 참고 (리눅스
