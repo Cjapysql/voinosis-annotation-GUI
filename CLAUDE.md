@@ -18,7 +18,7 @@ undocumented:
 - `docs/<module>.md` — one file per `back/`/`front/` source file (22 total), each with an "imported by"
   table, mechanism detail, and cross-refs into the two files below. Read the relevant one before touching
   a file.
-- `docs/module_map.html` (`.png`/`.jpg` are static renders of the same page) — dependency diagram across
+- `docs/module_map.html` (`.png` is a static render of the same page) — dependency diagram across
   all 22 files plus a suggested reading order.
 - `technical_reference.md` — merged design-rationale + bug-history document (formerly two separate files,
   `design_considerations.md` and `session_issues_log.md`, now retired). Part 2 has ~24 numbered topics each

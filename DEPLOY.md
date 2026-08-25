@@ -53,8 +53,11 @@ chmod +x build.sh
 2. `DMS_Actions.xlsx` (실행 파일과 **같은 폴더**에 두면 자동 인식)
 3. `assets/` 폴더(`icon.png`, `install_linux.sh`) — 데스크톱 아이콘 등록용
 
-`설치_안내.md`가 라벨러에게 배포하는 압축 파일(`dms_labeling_ubuntu2204.tar.gz`
-같은 이름)의 압축 해제 → 실행까지의 단계를 이미 담고 있으므로, 이 파일도 함께
+위 세 가지를 `dms_labeling_dist/` 같은 폴더 하나에 모은 뒤 **zip으로
+압축**해서 전달한다(`dms_labeling_ubuntu2204.zip` 같은 이름 - 리눅스/
+윈도우 라벨러 모두 압축 유틸이 기본 내장돼 있어 별도 설치 없이 풀 수
+있음). `설치_안내.md`가 라벨러에게 배포하는 이 zip 파일의 압축 해제 →
+실행까지의 단계를 이미 담고 있으므로, 이 파일도 같은 폴더에 함께
 포함해서 압축하면 된다.
 
 ## B. 윈도우 빌드 (`.github/workflows/build-windows.yml`)
