@@ -18,7 +18,7 @@ IMAGE_TAG="dms-labeling-build-2204"
 echo "==> 1/2 우분투 22.04 빌드 환경 이미지 준비"
 docker build -t "$IMAGE_TAG" -f docker/Dockerfile.build .
 
-echo "==> 2/2 컨테이너 안에서 빌드 (호스트의 .venv/build/dist와 겹치지 않게 별도 venv 사용)"
+echo "==> 2/3 컨테이너 안에서 빌드 (호스트의 .venv/build/dist와 겹치지 않게 별도 venv 사용)"
 docker run --rm -v "$(pwd)":/build -w /build "$IMAGE_TAG" bash -c '
     set -e
     rm -rf build dist .venv_docker
@@ -29,11 +29,22 @@ docker run --rm -v "$(pwd)":/build -w /build "$IMAGE_TAG" bash -c '
     pyinstaller dms_labeling.spec
 '
 
+echo "==> 3/3 배포용 tar.gz 패키징"
+# DEPLOY.md의 "리눅스 배포 패키지 구성"과 동일한 내용을 자동으로 묶는다:
+# 실행 파일 + (있으면) DMS_Actions.xlsx + assets/(아이콘, 데스크톱 등록 스크립트).
+PKG_DIR="dms_labeling_dist"
+PKG_TAR="dms_labeling_ubuntu2204.tar.gz"
+rm -rf "$PKG_DIR" "$PKG_TAR"
+mkdir "$PKG_DIR"
+cp dist/dms_labeling "$PKG_DIR"/
+[ -f DMS_Actions.xlsx ] && cp DMS_Actions.xlsx "$PKG_DIR"/
+cp -r assets "$PKG_DIR"/
+tar czf "$PKG_TAR" "$PKG_DIR"
+rm -rf "$PKG_DIR"
+
 echo ""
 echo "빌드 완료! (우분투 22.04 기준 - 22.04 이상 어디서나 실행 가능)"
 echo "  실행 파일: $(pwd)/dist/dms_labeling"
+echo "  배포용 압축: $(pwd)/$PKG_TAR"
 echo ""
-echo "배포 시 함께 챙길 것:"
-echo "  - dist/dms_labeling  (실행 파일)"
-echo "  - DMS_Actions.xlsx   (실행 파일과 같은 폴더에 두면 자동 인식)"
-echo "  - 배포 PC에 ffmpeg 설치 필요 (apt install ffmpeg)"
+echo "라벨러 PC에는 ffmpeg 설치가 별도로 필요합니다 (apt install ffmpeg)."

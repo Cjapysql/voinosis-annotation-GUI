@@ -42,7 +42,8 @@ python run_app.py [/path/to/DMS_Actions.xlsx]
 
 # Build a single-file Linux executable for non-technical labelers (Docker, pinned to Ubuntu 22.04 — the
 # oldest version labelers run — so glibc forward-compat covers newer versions too; host OS version doesn't
-# matter). Output: dist/dms_labeling
+# matter). Also packages dist/dms_labeling + DMS_Actions.xlsx + assets/ into dms_labeling_ubuntu2204.tar.gz,
+# ready to hand to a labeler.
 ./build_linux_2204.sh
 
 # Windows executable: no local command — pushed via GitHub Actions (.github/workflows/build-windows.yml),

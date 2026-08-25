@@ -11,8 +11,9 @@
 
 ## A. 리눅스 빌드 (`build_linux_2204.sh`, Docker)
 
+프로젝트 루트(`labeling_tool/`)에서:
+
 ```bash
-cd labeling_tool
 chmod +x build_linux_2204.sh
 ./build_linux_2204.sh
 ```
@@ -25,29 +26,18 @@ PyInstaller가 만드는 바이너리는 "빌드한 머신의 glibc 버전 이�
 포함) 동작한다. Docker만 설치돼 있으면 되고, 빌드 머신 자체의 우분투
 버전은 상관없다.
 
-결과물: `dist/dms_labeling`.
-
-### 리눅스 배포 패키지 구성
-
-개발자가 라벨러에게 전달할 것:
-1. `dist/dms_labeling` 실행 파일
-2. `DMS_Actions.xlsx` (실행 파일과 **같은 폴더**에 두면 자동 인식)
-3. `assets/` 폴더(`icon.png`, `install_linux.sh`) — 데스크톱 아이콘 등록용
-
-위 세 가지를 `dms_labeling_dist/` 같은 폴더 하나에 모은 뒤 **tar.gz로
-압축**해서 전달한다(`dms_labeling_ubuntu2204.tar.gz` 같은 이름):
-
-```bash
-tar czf dms_labeling_ubuntu2204.tar.gz dms_labeling_dist
-```
+빌드가 끝나면 스크립트가 배포용 압축까지 한 번에 만든다:
+- `dist/dms_labeling` — 실행 파일 단독(개발/디버깅용).
+- `dms_labeling_ubuntu2204.tar.gz` — 실행 파일 + (있으면) `DMS_Actions.xlsx`
+  + `assets/`(아이콘, `install_linux.sh`)를 한 폴더로 묶어 tar.gz로 압축한
+  것. **라벨러에게는 이 파일 하나만 전달하면 된다** — `설치_안내.md`가
+  이 파일의 압축 해제 → 실행까지의 단계를 안내한다.
 
 zip이 아니라 tar를 쓰는 이유: tar는 유닉스 실행 권한(실행 비트)을
 표준적으로 보존해서, 압축을 풀면 `dms_labeling`이 곧바로 실행 가능한
 상태로 나온다(zip은 어떤 도구로 압축했는지에 따라 실행 비트가 유지되지
 않을 수 있음). `tar`는 리눅스에 항상 기본 설치돼 있어 받는 쪽이 별도로
-뭘 설치할 필요도 없다. `설치_안내.md`가 라벨러에게 배포하는 이 tar.gz
-파일의 압축 해제 → 실행까지의 단계를 이미 담고 있으므로, 이 파일도 같은
-폴더에 함께 포함해서 압축하면 된다.
+뭘 설치할 필요도 없다.
 
 ## B. 윈도우 빌드 (`.github/workflows/build-windows.yml`)
 
@@ -68,35 +58,40 @@ zip이 아니라 tar를 쓰는 이유: tar는 유닉스 실행 권한(실행 비
 ## C. 라벨러 PC 준비 (공통, 리눅스 기준)
 
 실행 파일은 단독으로 대부분 돌아가지만, 아래 시스템 라이브러리에 의존한다.
-라벨러 PC(우분투)에서 한 번만 설치하면 됨:
+
+- **ffmpeg**: OpenCV로 mp4 자르기/읽기에 필요(이게 없으면 영상 컷/재생 실패).
+  아래 D절의 `install_linux.sh`가 없으면 자동으로 설치해주므로, 그 스크립트를
+  실행할 계획이면 따로 준비할 필요 없음.
+- **libxcb-cursor0**: Qt GUI가 X11 환경에서 뜨기 위해 필요.
+- **libtiff5/6**: Qt 이미지 플러그인 의존성(libtiff5가 없는 최신 우분투
+  24.04+는 libtiff6).
+
+`docker/Dockerfile.build`로 빌드한 실행 파일은 Qt의 xcb 플랫폼 플러그인이
+쓰는 추가 라이브러리들(`libxcb-icccm4`, `libxcb-cursor0` 등)을 빌드
+시점에 이미 번들에 포함시키므로, 실측상 라벨러 PC에 이 라이브러리들이
+따로 없어도 정상 동작했다(2026-08-25 헤드리스 실행 검증). 그래도 만약을
+대비해 안 될 경우엔 수동 설치:
 
 ```bash
 sudo apt update
 sudo apt install -y ffmpeg libxcb-cursor0 libtiff5
-# libtiff5가 없다는 최신 우분투(24.04+)라면: sudo apt install -y libtiff6
 ```
-
-- **ffmpeg**: OpenCV로 mp4 자르기/읽기에 필요 (이게 없으면 영상 컷/재생 실패)
-- **libxcb-cursor0**: Qt GUI가 X11 환경에서 뜨기 위해 필요
-- **libtiff5/6**: Qt 이미지 플러그인 의존성
-
-`docker/Dockerfile.build`로 빌드한 실행 파일은 Qt의 xcb 플랫폼 플러그인이
-쓰는 추가 라이브러리들(`libxcb-icccm4` 등)을 빌드 시점에 이미 번들에
-포함시키므로, 라벨러 PC에서 별도로 더 설치할 필요는 없다 — 위 세 개만
-있으면 됨.
 
 ## D. 데스크톱 아이콘 등록 (`assets/install_linux.sh`, 선택이지만 권장)
 
 리눅스 실행 파일(ELF)은 윈도우/macOS와 달리 파일 안에 아이콘을 내장하는
 표준 방식이 없다. `.desktop` 파일(리눅스 데스크톱 표준 규격)로 등록해야
-앱 목록/작업표시줄에 아이콘과 함께 뜬다.
+앱 목록/작업표시줄에 아이콘과 함께 뜬다. 이 스크립트는 등록과 함께
+ffmpeg가 없으면 자동으로 설치도 해준다(`sudo apt-get install -y ffmpeg`,
+비밀번호를 한 번 물어볼 수 있음) - 위 C절의 준비 단계를 이 한 스크립트로
+대체할 수 있다.
 
 ```bash
 cd dist/   # 또는 배포받은 압축을 푼 폴더 (dms_labeling 실행 파일이 있는 위치의 상위)
 ./assets/install_linux.sh
 ```
 
-sudo 권한 없이 현재 사용자 계정(`~/.local/share/dms_labeling`,
-`~/.local/share/applications`)에만 설치된다. `dist/dms_labeling`(개발
-프로젝트 안)과 `dms_labeling`(배포 압축 최상위) 두 경로 모두 자동으로
-찾는다.
+아이콘 등록 자체는 sudo 권한 없이 현재 사용자 계정(`~/.local/share/dms_labeling`,
+`~/.local/share/applications`)에만 설치된다(ffmpeg가 이미 있으면 sudo
+비밀번호 요청 자체가 없음). `dist/dms_labeling`(개발 프로젝트 안)과
+`dms_labeling`(배포 압축 최상위) 두 경로 모두 자동으로 찾는다.

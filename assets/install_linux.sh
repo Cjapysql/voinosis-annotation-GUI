@@ -4,12 +4,20 @@
 # 아이콘과 함께 등록한다. 리눅스 실행 파일(ELF)은 윈도우/macOS와 달리
 # 파일 안에 아이콘을 내장하는 표준 방식이 없어서, .desktop 파일(리눅스
 # 데스크톱 표준 규격)로 "이 실행 파일은 이 아이콘을 쓴다"고 따로 등록해야
-# 한다. sudo 권한 없이 현재 사용자 계정에만 설치된다.
+# 한다. 앱 등록 자체는 sudo 권한 없이 현재 사용자 계정에만 설치된다 -
+# ffmpeg가 없을 때만 그것을 까는 apt 설치 단계에서 sudo 비밀번호를 물어본다.
 #
 # 사용법 (dist/dms_labeling 빌드가 끝난 뒤, 딱 한 번만):
 #     ./assets/install_linux.sh
 #
 set -e
+
+# ffmpeg가 없으면 설치한다(OpenCV VideoWriter(mp4v)가 필요로 함) - sudo 비밀번호를
+# 한 번 물어볼 수 있음. 이미 설치돼 있으면 아무 것도 안 하고 넘어간다.
+if ! command -v ffmpeg >/dev/null 2>&1; then
+    echo "ffmpeg가 설치돼 있지 않아 설치를 진행합니다 (관리자 비밀번호가 필요할 수 있습니다)..."
+    sudo apt-get update && sudo apt-get install -y ffmpeg
+fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
