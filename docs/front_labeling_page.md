@@ -147,13 +147,19 @@ drowsiness + `DistractionTaskWindow`면 `window.drowsiness_window`(시작 60초
 
 ### `_missing_sensor_coverage(start_ts, end_ts)`
 
-카메라는 7개 스트림 중 하나라도(대략적 범위, `first_t_sec`/`last_t_sec` 기준)
-겹치면 있다고 판정. 오디오/IMU/워치/레이더는 `self.sensor_coverage`(페이지
-로드 시 미리 계산된 세그먼트별 범위)를 이름별로 `range_overlaps_any()`로
-개별 확인. 데이터 없는 센서 이름 목록을 반환(비어있으면 전부 있음).
+카메라는 스트림(`driver_rgb` 등)마다 `CameraTimestampIndex.segment_coverage()`
+(세그먼트별 실제 녹화 구간 리스트)를 `range_overlaps_any()`로 개별 확인해서,
+겹치는 데이터가 하나도 없는 스트림을 `카메라(driver_rgb)`처럼 이름째로
+보고한다. 오디오/IMU/워치/레이더는 `self.sensor_coverage`(페이지 로드 시
+미리 계산된 세그먼트별 범위)를 이름별로 같은 방식으로 확인. 데이터 없는
+센서 이름 목록을 반환(비어있으면 전부 있음).
 
-(소스에 `return missing` 다음에 도달 불가능한 `return False`가 한 줄 남아있음
-- 예전 리팩터링의 잔재로 보이며 실행에는 영향 없음.)
+**과거엔** `first_t_sec`~`last_t_sec`(스트림 전체를 하나로 뭉친 범위)로만
+확인해서, 세그먼트 사이의 진짜 녹화 공백(예: 녹화 재시작으로 몇 분씩
+비는 구간)이 그 범위 안에 있으면 "카메라 있음"으로 잘못 판정하는 버그가
+있었다 - 실제로 driver 카메라(RGB+적외선+depth)에 148초짜리 공백이 있는
+구간에서 화면은 정지 프레임만 보이는데 경고 배너는 안 뜨는 사례로 발견됨.
+`segment_coverage()`로 세그먼트별 실측 구간을 직접 확인하도록 고쳐서 해결.
 
 ## 시작/끝점 지정, 가이드라인 리셋
 

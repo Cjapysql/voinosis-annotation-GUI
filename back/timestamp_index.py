@@ -230,6 +230,14 @@ class CameraTimestampIndex:
         bounds = self._segment_bounds(len(self.segment_starts) - 1)
         return bounds[1] if bounds else None
 
+    def segment_coverage(self) -> list[tuple[float, float]]:
+        """세그먼트별 (절대 시작, 절대 끝) 리스트. first_t_sec/last_t_sec가
+        스트림 전체를 하나의 범위로 뭉치는 것과 달리, 세그먼트 사이의 실제
+        녹화 공백을 그대로 드러낸다 - back/coverage.py가 다른 센서에 대해
+        만드는 것과 같은 형태라 range_overlaps_any()로 바로 겹침 확인 가능."""
+        bounds = (self._segment_bounds(i) for i in range(len(self.segment_starts)))
+        return [b for b in bounds if b is not None]
+
     def _segment_bounds(self, i: int) -> tuple[float, float] | None:
         """세그먼트 i의 (절대 시작, 절대 끝) 시각. segment_starts를 못 구했으면 None."""
         if i >= len(self.segment_starts):

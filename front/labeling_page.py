@@ -560,25 +560,24 @@ class LabelingPage(QWidget):
 
     def _missing_sensor_coverage(self, start_ts: float, end_ts: float) -> list[str]:
         """이 구간에 데이터가 없는 센서 이름 목록(비어있으면 전부 있다는 뜻).
-        카메라는 7개 스트림 중 하나라도 겹치면 "카메라"는 있다고 본다(스트림별
-        개별 누락까지는 여기서 안 걸러내고, export 결과로 확인해야 함). 오디오/
-        IMU/워치/레이더는 self.sensor_coverage(세그먼트별 범위, 페이지 로드 시
-        미리 계산됨)를 이름별로 개별 확인한다."""
+        카메라는 스트림(driver_rgb 등)마다 세그먼트별 실제 녹화 구간을 개별
+        확인한다 - 스트림 전체의 first_t_sec~last_t_sec만 보면 두 세그먼트
+        사이의 진짜 공백(예: 녹화 재시작으로 몇 분씩 비는 경우)이 그 범위
+        안에 있어도 "커버됨"으로 오인해서, 정작 그 스트림 화면이 정지돼
+        있어도 경고가 안 뜨는 문제가 있었다. 오디오/IMU/워치/레이더는
+        self.sensor_coverage(세그먼트별 범위, 페이지 로드 시 미리 계산됨)를
+        이름별로 개별 확인한다."""
         missing = []
 
-        camera_ok = any(
-            idx.first_t_sec is not None and idx.first_t_sec <= end_ts and start_ts <= idx.last_t_sec
-            for idx in self.camera_indices.values()
-        )
-        if not camera_ok:
-            missing.append("카메라")
+        for (position, modality), idx in self.camera_indices.items():
+            if not range_overlaps_any(start_ts, end_ts, idx.segment_coverage()):
+                missing.append(f"카메라({position}_{modality})")
 
         for name, segments in self.sensor_coverage.items():
             if not range_overlaps_any(start_ts, end_ts, segments):
                 missing.append(name)
 
         return missing
-        return False
 
     def _refresh_progress_label(self):
         total = len(self.task_windows)

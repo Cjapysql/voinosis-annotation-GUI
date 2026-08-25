@@ -75,9 +75,17 @@ Path를 공유하는 경우(같은 csv 안에 여러 세그먼트의 데이터�
 ### 메서드
 
 - `first_t_sec`/`last_t_sec` (프로퍼티): 이 스트림 전체에서 가장 이른/늦은 절대
-  시각. `front/labeling_page.py`의 `_compute_total_range()`와
-  `_missing_sensor_coverage()`가 사용.
-- `_segment_bounds(i)`: 세그먼트 i의 (절대 시작, 절대 끝) 시각.
+  시각. `front/labeling_page.py`의 `_compute_total_range()`(타임라인 전체
+  탐색 범위 계산)가 사용 - 세그먼트 사이 공백까지는 구분 안 하는 대략적인
+  값이라 "커버리지 있음" 판정용으로는 안 맞음(아래 `segment_coverage()` 참고).
+- `segment_coverage()`: 세그먼트별 (절대 시작, 절대 끝) 리스트. `back/coverage.py`가
+  다른 센서에 대해 만드는 것과 같은 형태로, `range_overlaps_any()`와 함께
+  써서 특정 구간에 이 스트림의 실제 데이터가 있는지 확인한다.
+  `front/labeling_page.py`의 `_missing_sensor_coverage()`가 사용 - 예전엔
+  `first_t_sec`~`last_t_sec`만 보고 세그먼트 사이 진짜 공백을 놓치는 버그가
+  있어서 이 메서드로 교체됨.
+- `_segment_bounds(i)`: 세그먼트 i의 (절대 시작, 절대 끝) 시각(`segment_coverage()`가
+  내부적으로 사용).
 - `frame_at_time(t)`: 절대시각 t에 가장 가까운 (파일 경로, 로컬 프레임 인덱스)를
   반환. t가 모든 세그먼트 범위 밖이면 가장 가까운 세그먼트의 처음/끝 프레임으로
   클램프한다(범위 밖이라고 `None`을 반환하지 않음) - `front/stream_player.py`의
