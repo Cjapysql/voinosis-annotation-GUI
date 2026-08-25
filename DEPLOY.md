@@ -117,25 +117,3 @@ sudo 권한 없이 현재 사용자 계정(`~/.local/share/dms_labeling`,
 `~/.local/share/applications`)에만 설치된다. `dist/dms_labeling`(개발
 프로젝트 안)과 `dms_labeling`(배포 압축 최상위) 두 경로 모두 자동으로
 찾는다.
-
-## 문제 해결
-
-- **"cannot execute" / 창이 안 뜸**: `libxcb-cursor0` 설치 확인. 그래도 안 되면
-  터미널에서 실행해 에러 메시지를 보기 (`dms_labeling.spec`의 `console=False`를
-  `True`로 바꿔 다시 빌드하면 에러 로그가 콘솔에 뜸)
-- **영상은 나오는데 소리 안 남 / 재생 안 움직임**: `ffmpeg`, `pulseaudio` 설치 확인
-- **실행 파일이 너무 큼(약 180MB)**: PySide6+OpenCV 특성상 정상. 더 줄이려면
-  `dms_labeling.spec`의 `excludes`에 안 쓰는 모듈을 추가하거나, `--onedir`(폴더
-  배포) 방식으로 바꾸면 시작이 조금 빨라짐
-- **다른 우분투 버전에서 안 됨**: A-2(`build.sh`)로 빌드했다면 A-1
-  (`build_linux_2204.sh`)로 다시 빌드. A-1로 빌드했는데도 22.04보다 오래된
-  버전에서 안 되는 경우는 지원 범위 밖(22.04 미만은 미지원)
-- **윈도우에서 "Windows Defender가 실행을 막았습니다"**: PyInstaller로 만든
-  미서명 실행 파일은 흔히 발생. "추가 정보" → "실행" 클릭 (코드 서명 인증서를
-  구매해 서명하면 근본적으로 해결되지만 현재 미적용)
-
-## 대안: AppImage/Flatpak (미적용, 참고용)
-
-여러 우분투 버전에 하나의 파일로 배포하는 또 다른 방법으로 AppImage/Flatpak도
-있으나, 현재는 `build_linux_2204.sh`(Docker + 최저 버전 기준 glibc 빌드)로
-이미 다중 버전 지원을 해결했으므로 별도로 도입하지 않았다.

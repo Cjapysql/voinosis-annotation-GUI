@@ -6,9 +6,6 @@ DMS(운전자 모니터링 시스템) 멀티센서 주행 녹화 데이터에 `d
 프레임/샘플 단위로 잘라 `session_XXX_id_XXX/{scenario}/{segment}/...` 구조로
 저장한다.
 
-이 문서는 새로 이 프로젝트를 맡는 개발자가 처음 읽는 진입점이다. 각 항목별
-자세한 내용은 아래 "문서 지도"에서 연결되는 문서를 따라가면 된다.
-
 ## 문서 지도
 
 이 저장소의 문서는 목적별로 나뉘어 있다.
@@ -19,15 +16,9 @@ DMS(운전자 모니터링 시스템) 멀티센서 주행 녹화 데이터에 `d
 | `CLAUDE.md` | Claude Code(AI 코딩 에이전트)용 프로젝트 요약. 아키텍처/명령어를 간결하게 정리했고, 사람이 읽어도 같은 내용이 유용하다 |
 | `docs/*.md` (파일별 상세 문서, 22개) | `back/`, `front/` 각 소스 파일 하나당 문서 하나. 그 파일을 "가져다 쓰는 곳" 표, 핵심 메서드 동작 원리, `technical_reference.md` 관련 절 번호 링크 포함. 코드를 고치기 전에 해당 파일 문서부터 읽는 것을 권장 |
 | `docs/module_map.html` (`.png`는 같은 내용의 스크린샷) | 22개 파일 간 의존 관계를 topological depth 기준 6단계로 그린 다이어그램 + 추천 읽는 순서. 브라우저로 열면 됨 |
-| `technical_reference.md` | 구현/설계/버그 히스토리 통합 문서. "어떻게 구현되어 있고, 왜 이렇게 설계했고, 어떤 버그를 찾아서 어떻게 고쳤나"를 주제 24개로 통합 서술(2부) + 22개 파일 각각의 구현 상세를 모은 참조(3부). 대화 인용 포함 |
 | `DEPLOY.md` | 개발자가 비개발자 라벨러에게 실행 파일로 배포하는 방법 (리눅스/윈도우 빌드) |
 | `설치_안내.md` | 라벨러(비개발자) 본인이 보는 설치/실행 안내. 개발 관련 내용 없음 |
 
-새 기능을 추가하거나 버그를 고치는 작업 순서로는 다음을 권장한다:
-1. `docs/module_map.html`에서 건드릴 파일이 어디 위치하는지, 무엇을 가져다 쓰는지 확인
-2. 그 파일의 `docs/xxx.md`를 읽고, 링크된 `technical_reference.md` 절을 따라가서 배경(구현 이유, 관련 버그 이력) 파악
-3. 코드 수정
-4. 관련 `docs/xxx.md`와 (설계가 바뀌었거나 버그를 고쳤다면) `technical_reference.md`를 갱신 — 이 저장소는 코드를 바꾸면 관련 문서도 같이 갱신하는 것을 관례로 한다
 
 ## 폴더 구조
 
@@ -44,29 +35,6 @@ labeling_tool/
 `back`은 PySide6 없이도(순수 파이썬 + opencv-python/soundfile/openpyxl/numpy만으로)
 동작한다 — UI 없이 배치 처리 스크립트로 쓰거나 다른 프론트엔드로 교체하기 쉽다.
 `back`은 `front`를 import하지 않는다(단방향 의존).
-
-## 환경/실행
-
-개발/실행 모두 우분투 기준(윈도우 배포는 GitHub Actions 크로스빌드로 별도 지원,
-아래 `DEPLOY.md` 참고).
-
-```bash
-sudo apt install ffmpeg          # OpenCV VideoWriter(mp4v)가 시스템 ffmpeg 필요
-pip install -r requirements.txt
-
-# UI 실행
-cd front && python main.py /path/to/DMS_Actions.xlsx   # xlsx 인자 생략 시 "기타" 자유서술로만 라벨링 가능
-
-# 대안 진입점 (PyInstaller가 빌드에 쓰는 것과 동일, sys.path 처리 추가됨)
-python run_app.py [/path/to/DMS_Actions.xlsx]
-
-# 진단: 원본 트라이얼의 프레임/샘플 수를 아무것도 바꾸지 않고 점검
-python check_av_frames.py <home_dir> <trial_folder_name>
-```
-
-자동화된 테스트/린트/CI 설정은 없다. 검증은 실측 데이터를 가진 실제 trial
-폴더에 대해 `back/`의 함수를 직접 호출해 결과를 확인하는 스크립트 기반 검증과,
-디스플레이/오디오 장치가 없는 환경을 위한 headless 검증(아래 참고)으로 해왔다.
 
 ## back 모듈
 
