@@ -3,8 +3,6 @@
 라벨러가 파이썬을 몰라도 실행 파일 하나를 더블클릭하면 되도록 배포하는 방법.
 리눅스(우분투)와 윈도우 두 플랫폼을 지원한다.
 
-## 개념
-
 - **빌드는 개발자가 한다** (라벨러 PC에는 파이썬 설치 불필요)
 - PyInstaller는 크로스 컴파일이 안 된다 — 빌드한 OS/아키텍처용 바이너리만
   만든다. 리눅스용은 리눅스에서, 윈도우용은 윈도우에서 빌드해야 함
@@ -53,12 +51,20 @@ chmod +x build.sh
 2. `DMS_Actions.xlsx` (실행 파일과 **같은 폴더**에 두면 자동 인식)
 3. `assets/` 폴더(`icon.png`, `install_linux.sh`) — 데스크톱 아이콘 등록용
 
-위 세 가지를 `dms_labeling_dist/` 같은 폴더 하나에 모은 뒤 **zip으로
-압축**해서 전달한다(`dms_labeling_ubuntu2204.zip` 같은 이름 - 리눅스/
-윈도우 라벨러 모두 압축 유틸이 기본 내장돼 있어 별도 설치 없이 풀 수
-있음). `설치_안내.md`가 라벨러에게 배포하는 이 zip 파일의 압축 해제 →
-실행까지의 단계를 이미 담고 있으므로, 이 파일도 같은 폴더에 함께
-포함해서 압축하면 된다.
+위 세 가지를 `dms_labeling_dist/` 같은 폴더 하나에 모은 뒤 **tar.gz로
+압축**해서 전달한다(`dms_labeling_ubuntu2204.tar.gz` 같은 이름):
+
+```bash
+tar czf dms_labeling_ubuntu2204.tar.gz dms_labeling_dist
+```
+
+zip이 아니라 tar를 쓰는 이유: tar는 유닉스 실행 권한(실행 비트)을
+표준적으로 보존해서, 압축을 풀면 `dms_labeling`이 곧바로 실행 가능한
+상태로 나온다(zip은 어떤 도구로 압축했는지에 따라 실행 비트가 유지되지
+않을 수 있음). `tar`는 리눅스에 항상 기본 설치돼 있어 받는 쪽이 별도로
+뭘 설치할 필요도 없다. `설치_안내.md`가 라벨러에게 배포하는 이 tar.gz
+파일의 압축 해제 → 실행까지의 단계를 이미 담고 있으므로, 이 파일도 같은
+폴더에 함께 포함해서 압축하면 된다.
 
 ## B. 윈도우 빌드 (`.github/workflows/build-windows.yml`)
 
@@ -66,8 +72,12 @@ chmod +x build.sh
 
 - GitHub 저장소의 Actions 탭에서 "Windows 빌드" 워크플로우를 수동 실행
   (`workflow_dispatch`), 또는 `v1.0.0` 같은 `v*` 태그를 push하면 자동 실행됨
-- 완료되면 Actions 실행 결과의 Artifacts에서 `dms_labeling-windows.zip`
-  (내용물: `dist/dms_labeling.exe`, `DMS_Actions.xlsx`)을 내려받음
+- 완료되면 Actions 실행 결과의 Artifacts에서 `dms_labeling-windows.zip`을
+  내려받음. 워크플로우가 빌드 직후 `DMS_Actions.xlsx`를 `dist/`(실행 파일이
+  있는 폴더) 안으로 미리 복사해두므로, 이 zip을 그냥 풀면 `dms_labeling.exe`와
+  `DMS_Actions.xlsx`가 **이미 같은 폴더**에 들어있다 - 별도 재포장 없이
+  그대로 라벨러에게 전달하면 됨(윈도우는 데스크톱 아이콘 등록 스크립트가
+  없으므로 이 두 파일이 전부).
 - 윈도우 라벨러 PC에는 ffmpeg 설치가 별도로 필요 (아래 C 참고, 설치 방법만
   윈도우용으로 다름 — `winget install ffmpeg` 또는 공식 배포본 압축 해제 후
   PATH 등록)

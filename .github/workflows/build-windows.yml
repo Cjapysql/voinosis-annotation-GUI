@@ -28,10 +28,18 @@ jobs:
       - name: PyInstaller 빌드
         run: pyinstaller dms_labeling.spec
 
+      - name: DMS_Actions.xlsx를 실행 파일과 같은 폴더로 이동
+        # actions/upload-artifact는 지정한 경로들을 리포지토리 루트 기준
+        # 구조 그대로 보존한다 - dist/dms_labeling.exe와 루트의
+        # DMS_Actions.xlsx를 그냥 나열하면 압축 해제 시 서로 다른 폴더에
+        # 떨어져서, run_app.py의 xlsx 자동 탐색(실행 파일과 같은 폴더 우선)이
+        # 안 먹힌다. dist/ 안으로 미리 복사해서 아티팩트 자체가 이미 배포
+        # 가능한 한 폴더 구조가 되게 한다.
+        shell: bash
+        run: cp DMS_Actions.xlsx dist/
+
       - name: 결과물 업로드
         uses: actions/upload-artifact@v4
         with:
           name: dms_labeling-windows
-          path: |
-            dist/dms_labeling.exe
-            DMS_Actions.xlsx
+          path: dist/
