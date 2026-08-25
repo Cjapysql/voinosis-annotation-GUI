@@ -16,22 +16,16 @@ This repo carries more documentation than just this file — check it before ass
 undocumented:
 
 - `docs/<module>.md` — one file per `back/`/`front/` source file (22 total), each with an "imported by"
-  table, mechanism detail, and cross-refs into the two files below. Read the relevant one before touching
-  a file.
+  table and mechanism detail. Read the relevant one before touching a file.
 - `docs/module_map.html` (`.png` is a static render of the same page) — dependency diagram across
   all 22 files plus a suggested reading order.
-- `technical_reference.md` — merged design-rationale + bug-history document (formerly two separate files,
-  `design_considerations.md` and `session_issues_log.md`, now retired). Part 2 has ~24 numbered topics each
-  combining why something is designed the way it is, how it's implemented, and what bugs were found/fixed
-  for it (with conversation excerpts); Part 3 has a per-file implementation reference for all 22
-  `back/`/`front/` files. `docs/*.md` cross-reference Part 2 by topic number.
 - `README.md` — human-facing overview/onboarding entry point; largely mirrors this file's Architecture and
-  Domain-rules sections plus module tables, TODOs, and a pointer to `DEPLOY.md`.
+  Domain-rules sections plus module tables.
 - `DEPLOY.md` / `설치_안내.md` — building/distributing the packaged executable to non-developer labelers.
 
-When a change alters architecture, a domain rule, or resolves/adds a TODO, update the matching section in
-this file and in `README.md` (and the relevant `docs/*.md` / `technical_reference.md` entry) in the same
-change — these are treated as living docs, not one-off write-ups.
+When a change alters architecture or a domain rule, update the matching section in this file and in
+`README.md` (and the relevant `docs/*.md` entry) in the same change — these are treated as living docs,
+not one-off write-ups.
 
 ## Commands
 
@@ -150,7 +144,7 @@ concurrently.
   Audio pads with real silence (`np.zeros`); video pads by repeating the nearer boundary frame, split at
   the gap's temporal midpoint — deliberately mirroring `CameraTimestampIndex.frame_at_time()`'s existing
   playback-time gap-clamping behavior rather than a simpler "always hold last frame" rule (explicit design
-  choice; see `technical_reference.md` Part 2, topic 17).
+  choice).
 
 ### Headless verification (no display/audio device in the reference dev environment)
 
@@ -166,7 +160,7 @@ Because mp4 re-encoding is lossy, byte-identity checks don't work for video fram
 content is genuinely unchanged — mean absolute pixel difference is used instead, with ~2-7 observed for
 "same content, encoder noise" vs. ~26-30 for "actually different content".
 
-## Known open items (see README.md "아직 확정 안 된 것" for full detail)
+## Known open items
 
 - Watch CSV column names are unconfirmed against real device output.
 - `distraction_task_id` → Area/Verb/Noun auto-prefill is intentionally not implemented (labeler picks

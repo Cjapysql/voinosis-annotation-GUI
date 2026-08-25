@@ -90,8 +90,7 @@ Draft/Export 분리 원칙에서 "Export"에 해당하는 유일한 진입점이
     `write_repeated(prev_last_frame, ...)`로 직전 조각의 마지막 프레임을,
     뒤쪽 절반은 `_peek_frame(path, local_start)`로 읽은 이번 조각의 첫
     프레임을 반복해서 채운다 - 재생 중 `CameraTimestampIndex.frame_at_time()`이
-    공백을 "더 가까운 쪽 경계 프레임"으로 클램프하는 것과 정확히 같은
-    원칙(`technical_reference.md` 2부 17번).
+    공백을 "더 가까운 쪽 경계 프레임"으로 클램프하는 것과 정확히 같은 원칙.
   - 직전 조각이 없으면(요청 구간 맨 앞이 공백) 이번 조각의 첫 프레임으로
     공백 전체를 채운다.
   - 각 실제 조각을 다 쓴 뒤 그 조각의 마지막 프레임을 `prev_last_frame`으로
@@ -124,8 +123,7 @@ Draft/Export 분리 원칙에서 "Export"에 해당하는 유일한 진입점이
   무음(`np.zeros`, 채널 수는 첫 조각을 미리 열어서 확인)을 끼워 넣은 뒤**
   전부 이어붙여(`np.concatenate`) 한 번에 `sf.write()`. 이 구간에 실제
   오디오가 하나도 없으면(`file_ranges`가 비어있으면) 파일 자체를 안 만들고,
-  일부라도 있으면 항상 `draft.end_ts - draft.start_ts` 길이 그대로 나온다
-  (`technical_reference.md` 2부 17번).
+  일부라도 있으면 항상 `draft.end_ts - draft.start_ts` 길이 그대로 나온다.
 
 ## IMU/워치 export
 
