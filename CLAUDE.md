@@ -131,7 +131,11 @@ concurrently.
   scenario; `cognitive` has no counter and instead uses fixed names
   `pre_nback1~3, pre_cbt1~3, post_nback1~3, post_cbt1~3`.
 - Draft → commit is one-way: `DraftStore` holds editable timestamp+label state; only the "최종 저장" (final
-  save) action invokes `SegmentExporter`, which is treated as an irreversible commit.
+  save) action invokes `SegmentExporter`, which is treated as an irreversible commit — there is no undo
+  button in the UI. The one escape hatch: `DraftStore.is_committed_and_present()` checks
+  `Path(segment_dir).exists()`, so manually deleting a committed segment's output folder on disk makes the
+  app treat that draft as incomplete again (editable/deletable, `[완료]` label gone) — deliberately left as
+  an inconvenient filesystem-level path rather than an in-app button.
 - Column names for watch CSVs (`timestamp` vs `t_sec`) are not confirmed against real hardware —
   `_filter_csv_by_time` defensively tries both; a real mismatch fails silently into an empty file rather
   than raising.

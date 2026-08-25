@@ -18,6 +18,7 @@ DMS(운전자 모니터링 시스템) 멀티센서 주행 녹화 데이터에 `d
 | `docs/module_map.html` (`.png`는 같은 내용의 스크린샷) | 22개 파일 간 의존 관계를 topological depth 기준 6단계로 그린 다이어그램 + 추천 읽는 순서. 브라우저로 열면 됨 |
 | `DEPLOY.md` | 개발자가 비개발자 라벨러에게 실행 파일로 배포하는 방법 (리눅스/윈도우 빌드) |
 | `설치_안내.md` | 라벨러(비개발자) 본인이 보는 설치/실행 안내. 개발 관련 내용 없음 |
+| `라벨링_사용법.md` | 라벨러 본인이 보는 앱 사용법. 세션 선택→시나리오 선택→라벨링→최종 저장 전체 흐름을 실제 화면 스크린샷과 함께 설명 |
 
 ## 폴더 구조
 
@@ -85,7 +86,7 @@ cd front && python main.py /path/to/DMS_Actions.xlsx
 6. **구간 잠금 여부**: `drowsiness`/`cognitive`는 survey json에서 계산된 구간을 그대로 쓰고 라벨러가 재조정 불가(`TaskWindow`/`LabelDraft.boundaries_locked`). `distraction`만 자유롭게 여러 서브구간으로 자를 수 있음
 7. **segment 번호 체계**: `distraction_segmentNNN` / `drowsiness_segmentNNN`는 시나리오별로 완전히 독립된 카운터. `cognitive`는 카운터 없이 `pre_nback1~3, pre_cbt1~3, post_nback1~3, post_cbt1~3` 고정 이름 사용
 8. **라벨 입력 UX**: 카테고리형 필드(영역/동사/명사/도로상황/날씨 등)는 목록 선택 + "기타" 선택 시 자유 서술 입력 (`LabelDraft.is_free_text_override`로 필드별 표시)
-9. **저장 정책**: 작업 중엔 `DraftStore`에 timestamp+label만 임시 저장(자유롭게 수정 가능), "최종 저장" 시점에만 `SegmentExporter`가 실제 파일을 잘라 커밋 (커밋 후 되돌리기 없음, 비가역으로 취급)
+9. **저장 정책**: 작업 중엔 `DraftStore`에 timestamp+label만 임시 저장(자유롭게 수정 가능), "최종 저장" 시점에만 `SegmentExporter`가 실제 파일을 잘라 커밋 (앱 화면 안에는 되돌리기 버튼 없음, 비가역으로 취급 - 단 결과 폴더를 파일시스템에서 직접 지우면 `is_committed_and_present()`가 이를 감지해 다시 미완료로 취급함, 의도적으로 번거로운 경로)
 10. **export 시 센서 간 길이 패딩**: 라벨 구간이 어떤 센서의 실제 녹화 공백과 일부만 겹치면(완전히 안 겹치는 게 아니라), 그 센서 출력을 요청 구간 길이(`end_ts - start_ts`)에 맞춰 채운다 — 오디오는 무음(0 PCM), 비디오는 재생 중 공백 처리와 동일한 원칙(공백의 시간상 중간 지점을 기준으로 더 가까운 쪽 경계 프레임을 반복)으로 채운다. 겹치는 실제 데이터가 하나도 없는 센서는 여전히 파일 자체를 만들지 않음.
 
 ## 빌드/배포
