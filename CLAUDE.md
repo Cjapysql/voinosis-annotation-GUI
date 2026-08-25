@@ -40,12 +40,9 @@ cd front && python main.py /path/to/DMS_Actions.xlsx   # xlsx arg optional; with
 # Alternative entry point (same one PyInstaller builds from; adds sys.path handling)
 python run_app.py [/path/to/DMS_Actions.xlsx]
 
-# Build a single-file executable for non-technical labelers (must run on the same Ubuntu version/arch as the deploy target)
-./build.sh          # wraps: python3 -m venv .venv && pip install -r requirements.txt pyinstaller && pyinstaller dms_labeling.spec
-# Output: dist/dms_labeling
-
-# Build a Linux executable that works across Ubuntu versions (Docker, pinned to Ubuntu 22.04 — the oldest
-# version labelers run — so glibc forward-compat covers newer versions too; host OS version doesn't matter)
+# Build a single-file Linux executable for non-technical labelers (Docker, pinned to Ubuntu 22.04 — the
+# oldest version labelers run — so glibc forward-compat covers newer versions too; host OS version doesn't
+# matter). Output: dist/dms_labeling
 ./build_linux_2204.sh
 
 # Windows executable: no local command — pushed via GitHub Actions (.github/workflows/build-windows.yml),
@@ -55,7 +52,7 @@ python run_app.py [/path/to/DMS_Actions.xlsx]
 python check_av_frames.py <home_dir> <trial_folder_name>
 ```
 
-See `DEPLOY.md` for the full build/distribution walkthrough (both Linux paths, Windows CI, desktop-icon
+See `DEPLOY.md` for the full build/distribution walkthrough (Linux Docker build, Windows CI, desktop-icon
 registration via `assets/install_linux.sh`, and labeler-PC prerequisites).
 
 There is no automated test suite, linter, or CI config in this repo. Validation has historically been done

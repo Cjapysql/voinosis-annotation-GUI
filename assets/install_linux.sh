@@ -23,7 +23,7 @@ elif [ -f "$PROJECT_DIR/dms_labeling" ]; then
     EXE_SRC="$PROJECT_DIR/dms_labeling"
 else
     echo "dms_labeling 실행 파일을 찾을 수 없습니다."
-    echo "  - 개발 중이면 먼저 빌드해주세요 (./build.sh 또는 ./build_linux_2204.sh)."
+    echo "  - 개발 중이면 먼저 빌드해주세요 (./build_linux_2204.sh)."
     echo "  - 배포받은 압축 파일이면, 이 스크립트가 압축을 푼 폴더 안(assets/install_linux.sh)에 있는지 확인해주세요."
     exit 1
 fi

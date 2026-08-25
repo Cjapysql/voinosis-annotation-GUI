@@ -1,6 +1,6 @@
 # 배포 가이드 (비개발자 라벨러용 단일 실행 파일)
 
-라벨러가 파이썬을 몰라도 실행 파일 하나를 더블클릭하면 되도록 배포하는 방법.
+실행 파일 하나 배포하는 방법.
 리눅스(우분투)와 윈도우 두 플랫폼을 지원한다.
 
 - **빌드는 개발자가 한다** (라벨러 PC에는 파이썬 설치 불필요)
@@ -9,12 +9,7 @@
 - 실행 파일은 시스템 라이브러리 일부(ffmpeg 등)에는 여전히 의존하므로,
   라벨러 PC에 그것만 한 번 깔아주면 됨
 
-## A. 리눅스 빌드
-
-리눅스 빌드는 두 가지 방법이 있다. **여러 우분투 버전에 배포할 계획이면
-`build_linux_2204.sh`(Docker) 방식을 쓴다.**
-
-### A-1. `build_linux_2204.sh` (권장 — Docker, 우분투 22.04 기준 고정)
+## A. 리눅스 빌드 (`build_linux_2204.sh`, Docker)
 
 ```bash
 cd labeling_tool
@@ -31,18 +26,6 @@ PyInstaller가 만드는 바이너리는 "빌드한 머신의 glibc 버전 이�
 버전은 상관없다.
 
 결과물: `dist/dms_labeling`.
-
-### A-2. `build.sh` (Docker 없이, 지금 이 머신 버전으로만 빌드)
-
-```bash
-cd labeling_tool
-cp /경로/DMS_Actions.xlsx ./DMS_Actions.xlsx   # 있으면 번들과 같은 폴더에 자동 포함
-chmod +x build.sh
-./build.sh          # python3 -m venv .venv && pip install -r requirements.txt pyinstaller && pyinstaller dms_labeling.spec
-```
-
-**배포 대상과 반드시 같은 우분투 버전/아키텍처 머신에서 빌드해야 한다.**
-다른 버전에 배포할 거면 A-1을 쓰거나, 그 버전에서 따로 빌드해야 함.
 
 ### 리눅스 배포 패키지 구성
 
